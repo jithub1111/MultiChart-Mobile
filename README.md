@@ -20,7 +20,24 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - Charts: timeframes 1m, 2m, 5m, 15m, 30m, 1h, daily and weekly, with candles, volume and a session VWAP
 - Your layout is saved in the browser on each device
 
-All prices are **simulated demo data** for now.
+## Data
+
+Prices are **simulated demo data** until you switch on live data. Tap the **Demo data** badge next to
+the app name to open the Data source panel.
+
+**Live (Alpaca)** uses a free [Alpaca](https://alpaca.markets) paper account until the Schwab connection is ready:
+
+- **Charts**: full-market candles. The free plan holds back the most recent 15 minutes, so that
+  stretch is built from IEX trades and is swapped for full-market candles each minute as it catches up
+  (volume in that stretch looks small, because IEX carries only a few percent of trading)
+- **Last price, bid/ask and Time & Sales**: real time from the IEX exchange
+- **Level II**: still simulated, since no free source offers market depth
+- Up to 30 symbols streaming at once; US-listed stocks and ETFs only (no OTC symbols)
+- The free plan allows one live connection, so keep the app open in one tab or device at a time
+
+Your Alpaca keys are entered in the app and saved only in that browser. They are never stored in this repository.
+The live connection does not work inside the Claude preview, which blocks outside connections, so live data
+needs the app hosted somewhere else (for example GitHub Pages).
 
 ## Running it
 
@@ -29,6 +46,7 @@ Open `index.html` in any browser. There is no build step. Charts use
 
 ## Roadmap
 
-1. Register a Schwab developer app (Market Data Production) and wait for approval
-2. Add a small private server that signs in to Schwab and streams live quotes, candles, Level II and Time & Sales to the app
-3. Save layouts across devices, install to the home screen, then package for the App Store and Google Play
+1. Live data from Alpaca's free plan as a stand-in (done)
+2. Register a Schwab developer app (Market Data Production) and wait for approval
+3. Add a small private server that signs in to Schwab and streams live quotes, candles, Level II and Time & Sales to the app
+4. Save layouts across devices, install to the home screen, then package for the App Store and Google Play
