@@ -16,6 +16,7 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - **Drawing tools** (the line button on each chart): price levels and trendlines. Drawings belong to the symbol, so they show on every chart and timeframe for it
 - **Price alerts**: set them by tapping a price on the chart or from the Alerts menu. When one hits, a pop-up appears and the app beeps. Email and text delivery will come with the live data server
 - Faded ticker watermark behind each chart
+- **Zoom**: the − / + buttons at the right of the tab row scale the whole interface from 70% to 160%. Tap the percentage to go back to **Auto**, which picks a size for the screen (smaller on phones, larger on big monitors)
 - Charts: timeframes 1m, 2m, 5m, 15m, 30m, 1h, daily and weekly, with candles, volume and a session VWAP
 - Your layout is saved in the browser on each device
 

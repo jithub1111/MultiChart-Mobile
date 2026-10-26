@@ -25,6 +25,7 @@
   --l2-text: #050608;
   --ts-buy: #23c26b; --ts-sell: #f2545b; --ts-mid: #e4e8ec;
   --draw: #f0b429; --alert: #ff8a3d;
+  --scale: 1;
   --hover: color-mix(in srgb, var(--fg) 12%, transparent);
   --ui: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
   --num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -231,6 +232,13 @@ button { cursor: pointer; }
 .tabs button[aria-current="true"] { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--head)); }
 .tabs button svg { width: 9px; height: 9px; }
 .tabs .addtab { padding: 0 10px; font-size: 15px; }
+.zoomctl { margin-left: auto; display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; height: 28px; position: sticky; right: 0; }
+.tabs .zoomctl button { border: 0; border-radius: 0; height: 26px; padding: 0 10px; font-size: 15px; color: var(--fg); }
+.tabs .zoomctl .zlabel { font-size: 11px; min-width: 52px; justify-content: center; font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 6px; }
+.tabs .zoomctl button:disabled { opacity: .35; cursor: default; }
+
+/* app zoom: scale the interface text and controls; chart canvases stay at native size and scale their own text */
+.bar, .tabs, .th, .tbl, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
 
 /* drawings, alerts, saved layouts */
 .draw-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; width: 100%; height: 100%; }
@@ -281,7 +289,7 @@ button { cursor: pointer; }
 
 /* colors sheet */
 .sheet {
-  position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(360px, 100vw); overflow: auto;
+  position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(calc(360px * var(--scale)), 100vw); overflow: auto;
   background: var(--pop); border-left: 1px solid var(--line); box-shadow: -12px 0 34px rgba(0, 0, 0, .45);
   padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) 16px;
 }
@@ -577,7 +585,7 @@ class Tile {
       this.lines = [];
       this.chart = LightweightCharts.createChart(body, {
         autoSize: true,
-        layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11 },
+        layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
         rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
         timeScale: { rightOffset: 4 }
       });
@@ -1017,7 +1025,7 @@ let popAnchor = null;
 function openPop(anchor, html, bind) {
   if (popAnchor === anchor && !pop.hidden) return closePop();
   popAnchor = anchor;
-  pop.innerHTML = html;
+  pop.innerHTML = `<div class="zin">${html}</div>`;
   pop.hidden = false;
   bind(pop);
   const a = anchor.getBoundingClientRect(), p = pop.getBoundingClientRect();
@@ -1132,13 +1140,41 @@ document.getElementById('modeCharts').addEventListener('click', () => { state.ch
 function renderTabs() {
   const nav = document.getElementById('tabs');
   nav.innerHTML = tabs.map((t, i) => `<button data-tab="${i}" aria-current="${i === activeTab}">${esc(t.name)}${i === activeTab ? ICON.caret : ''}</button>`).join('') +
-    '<button class="addtab" id="addTab" aria-label="New tab">+</button>';
+    '<button class="addtab" id="addTab" aria-label="New tab">+</button>' +
+    `<span class="zoomctl" role="group" aria-label="Zoom"><button id="zoomOut" aria-label="Zoom out" ${uiScale() <= ZMIN + 0.001 ? 'disabled' : ''}>−</button><button class="zlabel" id="zoomLabel" title="Tap to fit this screen automatically">${scalePref === 'auto' ? 'Auto' : Math.round(uiScale() * 100) + '%'}</button><button id="zoomIn" aria-label="Zoom in" ${uiScale() >= ZMAX - 0.001 ? 'disabled' : ''}>+</button></span>`;
   nav.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     const i = +b.dataset.tab;
     if (i === activeTab) tabPop(b); else switchTab(i);
   });
   nav.querySelector('#addTab').onclick = () => newTab();
+  nav.querySelector('#zoomOut').onclick = () => setScale(uiScale() - 0.1);
+  nav.querySelector('#zoomIn').onclick = () => setScale(uiScale() + 0.1);
+  nav.querySelector('#zoomLabel').onclick = () => setScale('auto');
 }
+
+/* ---------- app zoom ---------- */
+// "auto" picks a size from the screen width; a number is the user's own zoom level.
+const SCALE_KEY = 'multichart-scale-v1', ZMIN = 0.7, ZMAX = 1.6;
+let scalePref = 'auto';
+try { const v = JSON.parse(localStorage.getItem(SCALE_KEY)); if (v === 'auto' || typeof v === 'number') scalePref = v; } catch (e) {}
+function autoScale() {
+  const w = Math.min(innerWidth, screen.width || innerWidth);
+  return w < 380 ? 0.85 : w < 520 ? 0.92 : w < 1700 ? 1 : w < 2300 ? 1.15 : 1.3;
+}
+function uiScale() { return scalePref === 'auto' ? autoScale() : scalePref; }
+function chartFont() { return Math.round(11 * uiScale()); }
+function setScale(v) {
+  scalePref = v === 'auto' ? 'auto' : Math.round(Math.max(ZMIN, Math.min(ZMAX, v)) * 10) / 10;
+  try { localStorage.setItem(SCALE_KEY, JSON.stringify(scalePref)); } catch (e) {}
+  applyScale();
+}
+function applyScale() {
+  document.documentElement.style.setProperty('--scale', uiScale());
+  tiles.forEach(t => { if (t.chart) { t.chart.applyOptions({ layout: { fontSize: chartFont() } }); t.markKey = null; } });
+  closePop();
+  renderTabs();
+}
+addEventListener('resize', () => { if (scalePref === 'auto') applyScale(); });
 function switchTab(i) {
   closePop();
   maxed = null; editing = false;
@@ -1350,13 +1386,13 @@ function applyColors() {
 const sheet = document.getElementById('sheet');
 function openColors() {
   closePop();
-  sheet.innerHTML = `
+  sheet.innerHTML = `<div class="zin">
     <div class="sheet-head"><h3>Colors</h3><button class="ib" id="sheetClose" aria-label="Close colors"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
     <h4>Start from a theme</h4>
     <div class="themes">${Object.keys(THEMES).map(n => `<button data-theme-name="${n}">${n}</button>`).join('')}</div>
     ${COLOR_GROUPS.map(([group, list]) => `<h4>${group}</h4>` + list.map(([k, label]) =>
       `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || DEFAULT_COLORS[k]}"></label>`).join('')).join('')}
-    <button class="btn reset" id="resetColors">Reset to default colors</button>`;
+    <button class="btn reset" id="resetColors">Reset to default colors</button></div>`;
   sheet.hidden = false;
   sheet.querySelector('#sheetClose').onclick = () => { sheet.hidden = true; };
   sheet.querySelectorAll('input[type=color]').forEach(inp => inp.addEventListener('input', () => { colors[inp.dataset.k] = inp.value; applyColors(); }));
@@ -1366,6 +1402,7 @@ function openColors() {
 document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden) openColors(); else sheet.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden = true; });
 applyColors();
+document.documentElement.style.setProperty('--scale', uiScale());
 
 /* ---------- go ---------- */
 render();
