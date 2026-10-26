@@ -9,6 +9,8 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - Panel types: **Chart**, **Level II** and **Time & Sales**
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides the Level II and Time & Sales panels
+- **Colors** panel: change every color (backgrounds, borders, headers, candles, VWAP, each Level II price level, Time & Sales), or start from the Dark, DAS classic or Light theme
+- DAS-style Level II: each price level has its own background color on both the bid and ask side
 - Charts: timeframes 1m, 2m, 5m, 15m, 30m, 1h, daily and weekly, with candles, volume and a session VWAP
 - Your layout is saved in the browser on each device
 

@@ -20,7 +20,11 @@
   --down: #f2545b;
   --vwap: #e45cf0;
   --pop: #171b21;
-  --bid-0: #1d4f7a; --bid-1: #173c5c; --bid-2: #122d44;
+  --chart-bg: #0b0d10;
+  --l2-1: #f5d90a; --l2-2: #35c46a; --l2-3: #3aa0ff; --l2-4: #ff7eb6; --l2-5: #b98cff; --l2-6: #8f9aa6;
+  --l2-text: #050608;
+  --ts-buy: #23c26b; --ts-sell: #f2545b; --ts-mid: #e4e8ec;
+  --hover: color-mix(in srgb, var(--fg) 12%, transparent);
   --ui: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
   --num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -59,7 +63,7 @@ button { cursor: pointer; }
 .btn svg { width: 16px; height: 16px; flex: none; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; }
 .seg button { border: 0; background: var(--head); padding: 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-.seg button[aria-pressed="true"] { background: #222a35; color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--hover); color: var(--fg); }
 @media (max-width: 560px) { .btn .lbl, .feed .lbl, .seg .lbl { display: none; } .btn { padding: 0 9px; } .brand { font-size: 14px; } }
 
 /* grid */
@@ -148,7 +152,7 @@ button { cursor: pointer; }
   font-family: var(--num); font-size: 12px; font-weight: 600; padding: 0 2px;
 }
 .ib { width: 26px; height: 24px; flex: none; border: 0; background: none; border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
-.ib:hover { background: #222a35; color: var(--fg); }
+.ib:hover { background: var(--hover); color: var(--fg); }
 .ib svg { width: 16px; height: 16px; }
 .body { flex: 1; min-height: 0; position: relative; }
 .legend {
@@ -165,11 +169,12 @@ button { cursor: pointer; }
 .r > span { overflow: hidden; text-overflow: ellipsis; }
 .r > span + span { text-align: right; }
 .r.hd { position: sticky; top: 0; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: 11px; font-weight: 600; z-index: 1; }
-.lv0 { background: var(--bid-0); } .lv1 { background: var(--bid-1); } .lv2 { background: var(--bid-2); }
-.bidp { color: var(--down); } .askp { color: var(--up); }
-.r.lv0 .bidp, .r.lv0 .askp { font-weight: 600; }
+.book .r:not(.hd) { color: var(--l2-text); border-bottom: 1px solid color-mix(in srgb, var(--l2-text) 18%, transparent); }
+.lv0 { background: var(--l2-1); } .lv1 { background: var(--l2-2); } .lv2 { background: var(--l2-3); }
+.lv3 { background: var(--l2-4); } .lv4 { background: var(--l2-5); } .lv5 { background: var(--l2-6); }
+.book .lv0 { font-weight: 600; }
 .tape .r { grid-template-columns: 9ch minmax(0, 1fr) 7ch; border-bottom: 1px solid var(--grid); }
-.tape .buy { color: var(--up); } .tape .sell { color: var(--down); } .tape .mid { color: var(--fg); }
+.tape .buy { color: var(--ts-buy); } .tape .sell { color: var(--ts-sell); } .tape .mid { color: var(--ts-mid); }
 .tape .big { font-weight: 700; }
 @container (max-width: 380px) {
   .book .r { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; padding: 2px 4px; font-size: 10.5px; }
@@ -190,7 +195,7 @@ button { cursor: pointer; }
   display: flex; align-items: center; justify-content: space-between; gap: 16px; text-align: left;
   border: 0; background: none; padding: 9px 10px; border-radius: 6px; font-size: 14px;
 }
-.menu button:hover:not(:disabled) { background: #222a35; }
+.menu button:hover:not(:disabled) { background: var(--hover); }
 .menu button:disabled { color: var(--muted); cursor: default; }
 .menu button[aria-current="true"] { color: var(--accent); }
 .menu .danger { color: var(--down); }
@@ -204,7 +209,7 @@ button { cursor: pointer; }
 .preset:hover { border-color: var(--accent); }
 .preset div { display: flex; gap: 2px; }
 .preset span { flex: 1; border-radius: 1.5px; background: #5d6875; }
-.preset span.l { background: var(--bid-0); } .preset span.t { background: #3a4552; }
+.preset span.l { background: var(--l2-1); } .preset span.t { background: #3a4552; }
 .symform { display: flex; gap: 6px; padding: 0 4px 8px; }
 .symform input {
   flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px;
@@ -214,6 +219,28 @@ button { cursor: pointer; }
 .picks button { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 6px 0; font-family: var(--num); font-size: 12px; font-weight: 600; }
 .picks button:hover { border-color: var(--accent); }
 .note { margin: 6px 6px 2px; font-size: 12px; color: var(--muted); max-width: 250px; line-height: 1.4; }
+/* colors sheet */
+.sheet {
+  position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(360px, 100vw); overflow: auto;
+  background: var(--pop); border-left: 1px solid var(--line); box-shadow: -12px 0 34px rgba(0, 0, 0, .45);
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) 16px;
+}
+@media (max-width: 560px) {
+  .sheet { top: auto; left: 0; width: auto; height: 60vh; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+}
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.sheet-head h3 { margin: 0; font-size: 17px; }
+.sheet h4 { margin: 18px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.themes { display: flex; gap: 6px; flex-wrap: wrap; }
+.themes button { border: 1px solid var(--line); background: var(--head); border-radius: 99px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+.themes button:hover { border-color: var(--accent); }
+.crow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; border-bottom: 1px solid var(--line); }
+.crow input { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; flex: none; }
+.crow input::-webkit-color-swatch-wrapper { padding: 2px; }
+.crow input::-webkit-color-swatch { border: 0; border-radius: 4px; }
+.sheet .reset { margin-top: 18px; width: 100%; justify-content: center; }
+@media (max-width: 400px) { .brand { display: none; } .bar { gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { .feed i { animation: none; } }
 </style>
 
@@ -229,6 +256,10 @@ button { cursor: pointer; }
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg>
     <span class="lbl">Layout</span>
   </button>
+  <button class="btn" id="colorsBtn" aria-label="Colors">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a6.5 6.5 0 1 0 0 13c1 0 1.5-.6 1.5-1.3 0-.9-.8-1.2-.8-2 0-.7.6-1.2 1.3-1.2h1.6a2.9 2.9 0 0 0 2.9-2.9C14.5 4 11.6 1.5 8 1.5z"/><circle cx="4.8" cy="7" r=".9" fill="currentColor"/><circle cx="7.2" cy="4.4" r=".9" fill="currentColor"/><circle cx="10.4" cy="5" r=".9" fill="currentColor"/></svg>
+    <span class="lbl">Colors</span>
+  </button>
   <button class="btn primary" id="editBtn" aria-pressed="false">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
     <span class="lbl">Edit layout</span>
@@ -236,6 +267,7 @@ button { cursor: pointer; }
 </header>
 <main class="grid" id="grid"></main>
 <div class="pop" id="pop" hidden></div>
+<aside class="sheet" id="sheet" hidden aria-label="Colors"></aside>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
@@ -334,12 +366,12 @@ function requote(s) {
   const lot = p < 5 ? 1000 : 100;
   const side = (top, sign) => {
     const out = [];
-    for (let lv = 0; lv < 4; lv++) {
-      const n = lv === 0 ? 4 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 3);
+    for (let lv = 0; lv < 6; lv++) {
+      const n = 1 + Math.floor(Math.random() * 3);
       const venues = [...VENUES].sort(() => Math.random() - 0.5).slice(0, n);
       venues.forEach(v => out.push({ ex: v, price: top + sign * lv * inc, size: lot * (1 + Math.floor(Math.random() * (lv === 0 ? 40 : 15))), lv }));
     }
-    return out.sort((a, b) => sign * (b.price - a.price) || b.size - a.size);
+    return out.sort((a, b) => a.lv - b.lv || b.size - a.size);
   };
   s.book = { bids: side(s.bid, -1), asks: side(s.ask, 1) };
 }
@@ -420,6 +452,20 @@ const ICON = {
   more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>'
 };
 const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales' };
+function chartColors() {
+  const muted = css('--muted'), line = css('--line'), grid = css('--grid');
+  return {
+    layout: { background: { type: 'solid', color: css('--chart-bg') }, textColor: muted },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: line },
+    timeScale: { borderColor: line },
+    crosshair: { vertLine: { color: muted, labelBackgroundColor: css('--head') }, horzLine: { color: muted, labelBackgroundColor: css('--head') } }
+  };
+}
+function candleColors() {
+  const up = css('--up'), down = css('--down');
+  return { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down };
+}
 const tiles = new Map();
 let maxed = null;
 
@@ -460,16 +506,14 @@ class Tile {
       body.innerHTML = '<div class="legend"></div>';
       this.chart = LightweightCharts.createChart(body, {
         autoSize: true,
-        layout: { background: { type: 'solid', color: css('--panel') }, textColor: css('--muted'), fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11 },
-        grid: { vertLines: { color: css('--grid') }, horzLines: { color: css('--grid') } },
-        rightPriceScale: { borderColor: css('--line'), scaleMargins: { top: 0.06, bottom: 0.24 } },
-        timeScale: { borderColor: css('--line'), rightOffset: 4 },
-        crosshair: { vertLine: { color: css('--muted'), labelBackgroundColor: '#2a313b' }, horzLine: { color: css('--muted'), labelBackgroundColor: '#2a313b' } }
+        layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11 },
+        rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
+        timeScale: { rightOffset: 4 }
       });
-      const up = css('--up'), down = css('--down');
+      this.chart.applyOptions(chartColors());
       this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
       this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-      this.candles = this.chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down });
+      this.candles = this.chart.addCandlestickSeries(candleColors());
       this.vw = this.chart.addLineSeries({ color: css('--vwap'), lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
     } else {
       this.$('.body').innerHTML = '<div class="tbl"></div>';
@@ -519,7 +563,7 @@ class Tile {
       else lg.innerHTML = '';
     } else if (this.kind === 'l2') {
       const rows = (list, cls, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
-        list.map(o => `<div class="r lv${Math.min(o.lv, 2)}"><span>${o.ex}</span><span class="${cls}">${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
+        list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
       this.$('.tbl').innerHTML = `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
     } else {
       this.$('.tbl').innerHTML = `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
@@ -534,6 +578,13 @@ class Tile {
     this.$('.chg').className = 'stack chg ' + cls;
     this.$('.bid').textContent = s.bid.toFixed(d);
     this.$('.ask').textContent = s.ask.toFixed(d);
+  }
+  retheme() {
+    if (!this.chart) return;
+    this.chart.applyOptions(chartColors());
+    this.candles.applyOptions(candleColors());
+    this.vw.applyOptions({ color: css('--vwap') });
+    this.volume.setData(this.volData(bars(this.cell.sym, this.cell.tf)));
   }
   paintEdit() {
     this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.cell.sym}${this.kind === 'chart' ? ' · ' + this.cell.tf : ''}</small>`;
@@ -851,6 +902,63 @@ document.getElementById('layoutBtn').addEventListener('click', e => {
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
 document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; render(); });
 document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; render(); });
+
+/* ---------- colors ---------- */
+const COLOR_KEY = 'multichart-colors-v1';
+const COLOR_GROUPS = [
+  ['Workspace', [['bg', 'App background'], ['head', 'Panel headers'], ['line', 'Borders'], ['fg', 'Text'], ['muted', 'Secondary text'], ['accent', 'Buttons and highlights'], ['pop', 'Menus']]],
+  ['Charts', [['chart-bg', 'Chart background'], ['grid', 'Grid lines'], ['up', 'Up candles and volume'], ['down', 'Down candles and volume'], ['vwap', 'VWAP line']]],
+  ['Level II', [['l2-1', 'Level 1 (best bid and ask)'], ['l2-2', 'Level 2'], ['l2-3', 'Level 3'], ['l2-4', 'Level 4'], ['l2-5', 'Level 5'], ['l2-6', 'Level 6 and deeper'], ['l2-text', 'Level text'], ['panel', 'Level II and T&S background']]],
+  ['Time & Sales', [['ts-buy', 'Buys (at the ask)'], ['ts-sell', 'Sells (at the bid)'], ['ts-mid', 'Between bid and ask']]]
+];
+const THEMES = {
+  'Dark': {},
+  'DAS classic': {
+    bg: '#000000', head: '#1b1b1b', line: '#3a3a3a', pop: '#141414', 'chart-bg': '#000000', panel: '#000000', grid: '#1a1a1a',
+    'l2-1': '#ffff00', 'l2-2': '#00d000', 'l2-3': '#00c8ff', 'l2-4': '#ff5fd2', 'l2-5': '#ff9a00', 'l2-6': '#a0a0a0',
+    'ts-buy': '#00ff00', 'ts-sell': '#ff3030', 'ts-mid': '#ffffff'
+  },
+  'Light': {
+    bg: '#e9edf1', panel: '#ffffff', 'chart-bg': '#ffffff', head: '#f4f6f8', line: '#cfd6de', grid: '#eef1f5', fg: '#131b24',
+    muted: '#5b6878', accent: '#2457d6', up: '#0f8a62', down: '#d1433a', vwap: '#c026d3', pop: '#ffffff', 'l2-6': '#c9d1da',
+    'ts-buy': '#0f8a62', 'ts-sell': '#d1433a', 'ts-mid': '#131b24'
+  }
+};
+const DEFAULT_COLORS = {};
+COLOR_GROUPS.forEach(([, list]) => list.forEach(([k]) => { DEFAULT_COLORS[k] = css('--' + k); }));
+let colors = {};
+try { colors = JSON.parse(localStorage.getItem(COLOR_KEY)) || {}; } catch (e) {}
+
+const isLight = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 140; };
+function applyColors() {
+  const root = document.documentElement;
+  Object.keys(DEFAULT_COLORS).forEach(k => {
+    if (colors[k]) root.style.setProperty('--' + k, colors[k]); else root.style.removeProperty('--' + k);
+  });
+  root.style.colorScheme = isLight(css('--bg')) ? 'light' : 'dark';
+  tiles.forEach(t => t.retheme());
+  try { localStorage.setItem(COLOR_KEY, JSON.stringify(colors)); } catch (e) {}
+}
+
+const sheet = document.getElementById('sheet');
+function openColors() {
+  closePop();
+  sheet.innerHTML = `
+    <div class="sheet-head"><h3>Colors</h3><button class="ib" id="sheetClose" aria-label="Close colors"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
+    <h4>Start from a theme</h4>
+    <div class="themes">${Object.keys(THEMES).map(n => `<button data-theme-name="${n}">${n}</button>`).join('')}</div>
+    ${COLOR_GROUPS.map(([group, list]) => `<h4>${group}</h4>` + list.map(([k, label]) =>
+      `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || DEFAULT_COLORS[k]}"></label>`).join('')).join('')}
+    <button class="btn reset" id="resetColors">Reset to default colors</button>`;
+  sheet.hidden = false;
+  sheet.querySelector('#sheetClose').onclick = () => { sheet.hidden = true; };
+  sheet.querySelectorAll('input[type=color]').forEach(inp => inp.addEventListener('input', () => { colors[inp.dataset.k] = inp.value; applyColors(); }));
+  sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName] }; applyColors(); openColors(); });
+  sheet.querySelector('#resetColors').onclick = () => { colors = {}; applyColors(); openColors(); };
+}
+document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden) openColors(); else sheet.hidden = true; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden = true; });
+applyColors();
 
 /* ---------- go ---------- */
 render();
