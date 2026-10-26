@@ -4,7 +4,8 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 
 ## What it does today
 
-- Grid of panels you can add, remove and resize by dragging the bars between them
+- **Edit layout** mode: tap the + on any side of a panel to add a chart, Level II or Time & Sales there, or remove and change panels
+- Resize panels by dragging the bars between them
 - Panel types: **Chart**, **Level II** and **Time & Sales**
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides the Level II and Time & Sales panels

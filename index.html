@@ -60,11 +60,13 @@ button { cursor: pointer; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; }
 .seg button { border: 0; background: var(--head); padding: 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: #222a35; color: var(--fg); }
-@media (max-width: 560px) { .btn .lbl, .feed .lbl { display: none; } .btn { padding: 0 9px; } .brand { font-size: 14px; } }
+@media (max-width: 560px) { .btn .lbl, .feed .lbl, .seg .lbl { display: none; } .btn { padding: 0 9px; } .brand { font-size: 14px; } }
 
 /* grid */
 .grid { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.row { display: flex; min-height: 0; min-width: 0; }
+.box { display: flex; min-height: 0; min-width: 0; }
+.box.h { flex-direction: row; } .box.v { flex-direction: column; }
+.grid > * { min-height: 0; }
 .tile {
   min-width: 0; min-height: 0; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
@@ -77,7 +79,43 @@ button { cursor: pointer; }
 .split.h::after { left: 50%; top: 2px; width: 34px; height: 4px; margin-left: -17px; }
 .split.v::after { top: 50%; left: 2px; height: 34px; width: 4px; margin-top: -17px; }
 .split:hover::after, .split.drag::after { background: var(--accent); }
-.grid.maxed .split, .grid.maxed .row:not(.has-max), .grid.maxed .tile:not(.max) { display: none; }
+.tile { position: relative; container-type: size; }
+.btn[aria-pressed="true"] { background: var(--up); border-color: var(--up); }
+@media (max-width: 560px) { #editBtn[aria-pressed="true"] .lbl { display: inline; } }
+
+/* edit layout overlay */
+.edit {
+  position: absolute; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+  background: rgba(5, 8, 12, .78); border: 2px dashed var(--accent); border-radius: 3px;
+}
+.grid.editing .edit { display: flex; }
+.edit .mid { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 0 44px; }
+.edit .what { font-weight: 700; font-size: 14px; }
+.edit .what small { display: block; font-family: var(--num); font-weight: 500; font-size: 11px; color: var(--muted); }
+.edit .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.edit .acts button { border: 1px solid var(--line); background: var(--head); border-radius: 6px; padding: 5px 9px; font-size: 12px; font-weight: 600; }
+.edit .acts .danger { color: var(--down); }
+.edit .acts button:disabled { opacity: .4; cursor: default; }
+.side-add {
+  position: absolute; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
+  display: grid; place-items: center; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); padding: 0;
+}
+.side-add svg { width: 16px; height: 16px; }
+.side-add[data-side="top"] { top: 6px; left: 50%; margin-left: -17px; }
+.side-add[data-side="bottom"] { bottom: 6px; left: 50%; margin-left: -17px; }
+.side-add[data-side="left"] { left: 6px; top: 50%; margin-top: -17px; }
+.side-add[data-side="right"] { right: 6px; top: 50%; margin-top: -17px; }
+@container (max-width: 200px) { .edit .what small { display: none; } .edit .mid { padding: 0 40px; } }
+@container (max-height: 200px) {
+  .edit .what { display: none; }
+  .side-add { width: 28px; height: 28px; }
+  .side-add[data-side="top"], .side-add[data-side="bottom"] { margin-left: -14px; }
+  .side-add[data-side="left"], .side-add[data-side="right"] { margin-top: -14px; }
+  .side-add[data-side="top"] { top: 4px; } .side-add[data-side="bottom"] { bottom: 4px; }
+  .side-add[data-side="top"], .side-add[data-side="bottom"] { left: 18%; }
+}
+@container (max-height: 130px) { .edit .mid { display: none; } .side-add[data-side="top"], .side-add[data-side="bottom"] { left: 50%; } }
+@container (max-width: 150px) { .edit .mid { display: none; } }
 
 /* tile header */
 .th {
@@ -185,15 +223,15 @@ button { cursor: pointer; }
   <div class="spacer"></div>
   <div class="seg" role="group" aria-label="Workspace mode">
     <button id="modeAll" aria-pressed="true">Full</button>
-    <button id="modeCharts" aria-pressed="false">Charts only</button>
+    <button id="modeCharts" aria-pressed="false">Charts<span class="lbl"> only</span></button>
   </div>
   <button class="btn" id="layoutBtn" aria-label="Choose layout">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg>
     <span class="lbl">Layout</span>
   </button>
-  <button class="btn primary" id="addBtn" aria-label="Add panel">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>
-    <span class="lbl">Add</span>
+  <button class="btn primary" id="editBtn" aria-pressed="false">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
+    <span class="lbl">Edit layout</span>
   </button>
 </header>
 <main class="grid" id="grid"></main>
@@ -403,8 +441,15 @@ class Tile {
         ${chart ? `<select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
         <button class="ib more" aria-label="Panel options">${ICON.more}</button>
       </div>
-      <div class="body"></div>`;
+      <div class="body"></div>
+      <div class="edit">
+        ${['top', 'right', 'bottom', 'left'].map(sd => `<button class="side-add" data-side="${sd}" aria-label="Add panel ${sd === 'top' ? 'above' : sd === 'bottom' ? 'below' : 'to the ' + sd}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v10M3 8h10"/></svg></button>`).join('')}
+        <div class="mid"><div class="what"></div><div class="acts"><button data-a="type">Change type</button><button data-a="del" class="danger">Remove</button></div></div>
+      </div>`;
     this.$ = sel => el.querySelector(sel);
+    el.querySelectorAll('.side-add').forEach(b => b.addEventListener('click', () => addPop(b, this, b.dataset.side)));
+    this.$('.edit [data-a=type]').addEventListener('click', e => typePop(e.currentTarget, this));
+    this.$('.edit [data-a=del]').addEventListener('click', () => removePanel(this.cell.id));
     this.$('.sym').addEventListener('click', e => symbolPop(e.currentTarget, this));
     this.$('.link').addEventListener('click', e => linkPop(e.currentTarget, this));
     this.$('.more').addEventListener('click', e => tileMenu(e.currentTarget, this));
@@ -490,11 +535,17 @@ class Tile {
     this.$('.bid').textContent = s.bid.toFixed(d);
     this.$('.ask').textContent = s.ask.toFixed(d);
   }
+  paintEdit() {
+    this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.cell.sym}${this.kind === 'chart' ? ' · ' + this.cell.tf : ''}</small>`;
+    this.$('.edit [data-a=del]').disabled = allCells().length < 2;
+  }
   destroy() { if (this.chart) this.chart.remove(); }
 }
 
 /* ---------- layout state ---------- */
-const KEY = 'multichart-layout-v2';
+// The layout is a tree. A split node lays its children side by side (dir 'h') or stacked (dir 'v');
+// a leaf is one panel. `size` is a node's relative share of its parent.
+const KEY = 'multichart-layout-v3', OLD_KEY = 'multichart-layout-v2';
 const DEFAULT_CHARTS = [
   { sym: 'HGRAF', tf: '1m' }, { sym: 'GLD', tf: '2m' }, { sym: 'UWMC', tf: '1m' }, { sym: 'IAUX', tf: '1m' },
   { sym: 'SPY', tf: '5m' }, { sym: 'QQQ', tf: '15m' }
@@ -507,82 +558,119 @@ const PRESETS = [
 const CODE = { c: 'chart', l: 'l2', t: 'ts' };
 let nextId = 1;
 const newCell = (kind, extra) => ({ id: 'p' + nextId++, kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
+const isLeaf = n => !!n.kind;
 
-let state = { rows: [], chartsOnly: false };
-const allCells = () => state.rows.flatMap(r => r.cells);
+let state = { root: null, chartsOnly: false };
+function leaves(n = state.root, out = []) { if (!n) return out; if (isLeaf(n)) out.push(n); else n.children.forEach(c => leaves(c, out)); return out; }
+const allCells = () => leaves();
+function parentOf(target, n = state.root) {
+  if (!n || isLeaf(n)) return null;
+  for (const c of n.children) { if (c === target) return n; const p = parentOf(target, c); if (p) return p; }
+  return null;
+}
+function replaceNode(oldN, newN) {
+  const p = parentOf(oldN);
+  if (!p) state.root = newN; else p.children[p.children.indexOf(oldN)] = newN;
+}
+// Collapse single-child splits and merge nested splits that run the same direction.
+function normalize(n) {
+  if (!n || isLeaf(n)) return n;
+  const kids = [];
+  n.children.map(normalize).filter(Boolean).forEach(c => {
+    if (!isLeaf(c) && c.dir === n.dir) {
+      const sum = c.children.reduce((a, g) => a + g.size, 0);
+      c.children.forEach(g => { g.size = c.size * g.size / sum; kids.push(g); });
+    } else kids.push(c);
+  });
+  if (!kids.length) return null;
+  if (kids.length === 1) { kids[0].size = n.size; return kids[0]; }
+  n.children = kids;
+  return n;
+}
 
 function fromPreset(shape) {
   const pool = { chart: [], l2: [], ts: [] };
   allCells().forEach(c => pool[c.kind].push(c));
   let ci = 0;
-  const rows = shape.map(code => ({
-    size: code.includes('c') ? 3 : 1.5,
-    cells: [...code].map(ch => {
-      const kind = CODE[ch];
-      const reuse = pool[kind].shift();
-      if (reuse) return { ...reuse, size: 1 };
-      if (kind === 'chart') { const d = DEFAULT_CHARTS[(allCells().filter(c => c.kind === 'chart').length + ci++) % DEFAULT_CHARTS.length]; return newCell(kind, d); }
-      return newCell(kind);
-    })
+  const rows = shape.map(code => [...code].map(ch => {
+    const kind = CODE[ch];
+    const reuse = pool[kind].shift();
+    if (reuse) return { ...reuse, size: 1 };
+    if (kind === 'chart') { const d = DEFAULT_CHARTS[(allCells().filter(c => c.kind === 'chart').length + ci++) % DEFAULT_CHARTS.length]; return newCell(kind, d); }
+    return newCell(kind);
   }));
   // Link each Level II / Time & Sales column to the chart above it in the last chart row.
-  const chartRows = rows.filter(r => r.cells.some(c => c.kind === 'chart'));
-  const lastCharts = chartRows.length ? chartRows[chartRows.length - 1].cells : [];
-  let g = 0;
-  rows.forEach(r => r.cells.forEach((c, j) => {
+  const chartRows = rows.filter(r => r.some(c => c.kind === 'chart'));
+  const lastCharts = chartRows.length ? chartRows[chartRows.length - 1] : [];
+  const used = new Set();
+  rows.forEach(r => r.forEach((c, j) => {
     if (c.kind === 'chart' || !lastCharts.length) return;
     const target = lastCharts[Math.min(j, lastCharts.length - 1)];
-    if (!target.link) target.link = nextLink(rows, ++g);
+    if (!target.link) { target.link = freeLink(used); }
+    used.add(target.link);
     c.link = target.link; c.sym = target.sym;
   }));
-  return rows;
+  return normalize({
+    dir: 'v', size: 1,
+    children: rows.map((r, i) => ({ dir: 'h', size: shape[i].includes('c') ? 3 : 1.5, children: r }))
+  });
 }
-function nextLink(rows, want) {
-  const used = new Set(rows.flatMap(r => r.cells.map(c => c.link)).filter(Boolean));
-  for (let i = 0; i < 5; i++) { const g = ((want - 1 + i) % 5) + 1; if (!used.has(g)) return g; }
-  return want;
+function freeLink(extra = new Set()) {
+  const used = new Set([...allCells().map(c => c.link), ...extra].filter(Boolean));
+  for (let g = 1; g <= 5; g++) if (!used.has(g)) return g;
+  return 1;
 }
 
 try {
   const saved = JSON.parse(localStorage.getItem(KEY));
-  if (saved && saved.rows && saved.rows.length) {
-    state = saved;
-    allCells().forEach(c => { if (!TF[c.tf]) c.tf = '5m'; if (!KINDS[c.kind]) c.kind = 'chart'; nextId = Math.max(nextId, +c.id.slice(1) + 1); });
+  const old = !saved && JSON.parse(localStorage.getItem(OLD_KEY));
+  if (saved && saved.root) state = saved;
+  else if (old && old.rows && old.rows.length) {
+    state = { chartsOnly: !!old.chartsOnly, root: normalize({ dir: 'v', size: 1, children: old.rows.map(r => ({ dir: 'h', size: r.size, children: r.cells })) }) };
   }
-} catch (e) {}
-if (!state.rows.length) state.rows = fromPreset(innerWidth < 700 ? ['c', 'c', 'lt'] : ['cc', 'cc', 'll', 'tt']);
+  allCells().forEach(c => { if (!TF[c.tf]) c.tf = '5m'; if (!KINDS[c.kind]) c.kind = 'chart'; nextId = Math.max(nextId, +c.id.slice(1) + 1); });
+} catch (e) { state = { root: null, chartsOnly: false }; }
+if (!state.root) state.root = fromPreset(innerWidth < 700 ? ['c', 'c', 'lt'] : ['cc', 'cc', 'll', 'tt']);
 
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const visible = c => !state.chartsOnly || c.kind === 'chart';
 
 /* ---------- render ---------- */
 const grid = document.getElementById('grid');
+let editing = false;
 function render() {
   grid.textContent = '';
   const live = new Set();
-  const view = state.rows.map(row => ({ row, cells: row.cells.filter(visible) })).filter(v => v.cells.length);
-  if (maxed && !view.some(v => v.cells.some(c => c.id === maxed))) maxed = null;
-  view.forEach((v, ri) => {
-    if (ri > 0) grid.append(splitter('h', view.map(x => x.row), ri - 1));
-    const rEl = document.createElement('div');
-    rEl.className = 'row';
-    rEl.style.flex = `${v.row.size} 1 0`;
-    v.cells.forEach((cell, ci) => {
-      if (ci > 0) rEl.append(splitter('v', v.cells, ci - 1));
-      let t = tiles.get(cell.id);
-      if (t && t.kind !== cell.kind) { t.destroy(); tiles.delete(cell.id); t = null; }
-      if (!t) { t = new Tile(cell); tiles.set(cell.id, t); }
-      t.cell = cell;
-      t.el.style.flex = `${cell.size} 1 0`;
-      t.el.classList.toggle('max', maxed === cell.id);
-      if (maxed === cell.id) rEl.classList.add('has-max');
-      rEl.append(t.el);
-      live.add(cell.id);
-    });
-    grid.append(rEl);
-  });
+  const place = cell => {
+    let t = tiles.get(cell.id);
+    if (t && t.kind !== cell.kind) { t.destroy(); tiles.delete(cell.id); t = null; }
+    if (!t) { t = new Tile(cell); tiles.set(cell.id, t); }
+    t.cell = cell;
+    t.el.style.flex = `${cell.size} 1 0`;
+    live.add(cell.id);
+    return t.el;
+  };
+  const build = n => {
+    if (isLeaf(n)) return visible(n) ? place(n) : null;
+    const kids = n.children.map(c => [c, build(c)]).filter(([, el]) => el);
+    if (!kids.length) return null;
+    const box = document.createElement('div');
+    box.className = 'box ' + n.dir;
+    box.style.flex = `${n.size} 1 0`;
+    const items = kids.map(([c]) => c);
+    kids.forEach(([, el], i) => { if (i) box.append(splitter(n.dir === 'v' ? 'h' : 'v', items, i - 1)); box.append(el); });
+    return box;
+  };
+  const maxCell = maxed && allCells().find(c => c.id === maxed && visible(c));
+  if (!maxCell) maxed = null;
+  const top = maxCell ? place(maxCell) : build(state.root);
+  if (top) { top.style.flex = '1 1 0'; grid.append(top); }
   for (const [id, t] of tiles) if (!live.has(id)) { t.destroy(); tiles.delete(id); }
-  grid.classList.toggle('maxed', !!maxed);
+  tiles.forEach(t => t.paintEdit());
+  grid.classList.toggle('editing', editing);
+  const eb = document.getElementById('editBtn');
+  eb.setAttribute('aria-pressed', String(editing));
+  eb.querySelector('.lbl').textContent = editing ? 'Done' : 'Edit layout';
   document.getElementById('modeAll').setAttribute('aria-pressed', String(!state.chartsOnly));
   document.getElementById('modeCharts').setAttribute('aria-pressed', String(state.chartsOnly));
   save();
@@ -599,7 +687,7 @@ function splitter(kind, items, i) {
     s.setPointerCapture(e.pointerId);
     s.classList.add('drag');
     const vertical = kind === 'h';
-    const els = [...s.parentElement.children].filter(c => c.classList.contains(vertical ? 'row' : 'tile'));
+    const els = [...s.parentElement.children].filter(c => !c.classList.contains('split'));
     const px = els.map(el => { const r = el.getBoundingClientRect(); return vertical ? r.height : r.width; });
     const k = items.reduce((a, it) => a + it.size, 0) / px.reduce((a, b) => a + b, 0);
     items.forEach((it, j) => { it.size = px[j] * k; });
@@ -626,34 +714,39 @@ function setSymbol(t, sym) {
   save();
 }
 
-function addPanel(kind) {
+// Add a panel on one side of an existing panel. Level II and Time & Sales link to the panel they sit next to.
+function insertPanel(target, side, kind) {
   maxed = null;
   if (kind !== 'chart') state.chartsOnly = false;
-  const cap = innerWidth < 700 ? 2 : 3;
   const charts = allCells().filter(c => c.kind === 'chart');
-  const cell = kind === 'chart'
-    ? newCell('chart', DEFAULT_CHARTS[charts.length % DEFAULT_CHARTS.length])
-    : newCell(kind);
-  if (kind !== 'chart' && charts.length) {
-    const target = charts[0];
-    if (!target.link) target.link = nextLink(state.rows, 1);
+  const cell = kind === 'chart' ? newCell('chart', DEFAULT_CHARTS[charts.length % DEFAULT_CHARTS.length]) : newCell(kind);
+  if (kind !== 'chart') {
+    if (!target.link) target.link = freeLink();
     cell.link = target.link; cell.sym = target.sym;
   }
-  const lastRow = state.rows[state.rows.length - 1];
-  const sameKind = lastRow && lastRow.cells.every(c => (c.kind === 'chart') === (kind === 'chart'));
-  if (lastRow && sameKind && lastRow.cells.length < cap) {
-    const avg = lastRow.cells.reduce((a, c) => a + c.size, 0) / lastRow.cells.length;
-    cell.size = avg; lastRow.cells.push(cell);
+  const dir = side === 'left' || side === 'right' ? 'h' : 'v';
+  const before = side === 'left' || side === 'top';
+  const share = kind === 'chart' ? 1 : 0.6;
+  const p = parentOf(target);
+  if (p && p.dir === dir) {
+    const total = target.size;
+    target.size = total / (1 + share); cell.size = total * share / (1 + share);
+    const i = p.children.indexOf(target);
+    p.children.splice(before ? i : i + 1, 0, cell);
   } else {
-    const avg = state.rows.length ? state.rows.reduce((a, r) => a + r.size, 0) / state.rows.length : 1;
-    state.rows.push({ size: kind === 'chart' ? avg : avg / 2, cells: [cell] });
+    const wrap = { dir, size: target.size, children: [] };
+    replaceNode(target, wrap);
+    target.size = 1; cell.size = share;
+    wrap.children = before ? [cell, target] : [target, cell];
   }
   render();
 }
 function removePanel(id) {
   if (allCells().length < 2) return;
-  state.rows.forEach(r => { r.cells = r.cells.filter(c => c.id !== id); });
-  state.rows = state.rows.filter(r => r.cells.length);
+  const cell = allCells().find(c => c.id === id), p = parentOf(cell);
+  if (!p) return;
+  p.children = p.children.filter(c => c !== cell);
+  state.root = normalize(state.root);
   render();
 }
 
@@ -691,6 +784,22 @@ function tileMenu(anchor, t) {
     if (v) v.onclick = () => { t.cell.vwap = !t.cell.vwap; t.load(); save(); closePop(); };
     p.querySelector('[data-a=max]').onclick = () => { closePop(); toggleMax(t); };
     p.querySelector('[data-a=del]').onclick = () => { closePop(); removePanel(t.cell.id); };
+    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
+  });
+}
+
+function addPop(anchor, t, side) {
+  const where = side === 'top' ? 'above' : side === 'bottom' ? 'below' : 'to the ' + side;
+  openPop(anchor, `
+    <h4>Add ${where}</h4>
+    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}"><span>${label}</span></button>`).join('')}</div>`, p => {
+    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); insertPanel(t.cell, side, b.dataset.k); });
+  });
+}
+function typePop(anchor, t) {
+  openPop(anchor, `
+    <h4>Panel type</h4>
+    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>${label}</span></button>`).join('')}</div>`, p => {
     p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
   });
 }
@@ -734,18 +843,12 @@ document.getElementById('layoutBtn').addEventListener('click', e => {
       maxed = null;
       const shape = PRESETS[+b.dataset.i];
       if (shape.some(code => /[lt]/.test(code))) state.chartsOnly = false;
-      state.rows = fromPreset(shape);
+      state.root = fromPreset(shape);
       render(); closePop();
     });
   });
 });
-document.getElementById('addBtn').addEventListener('click', e => {
-  openPop(e.currentTarget, `
-    <h4>Add panel</h4>
-    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}"><span>${label}</span></button>`).join('')}</div>`, p => {
-    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); addPanel(b.dataset.k); });
-  });
-});
+document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
 document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; render(); });
 document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; render(); });
 
