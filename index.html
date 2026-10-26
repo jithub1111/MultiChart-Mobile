@@ -1,0 +1,759 @@
+<title>Multichart</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: full-screen dark trading workspace (single deliberate dark look).
+   Thin top bar, then rows of tiles (chart / Level II / Time & Sales) with draggable splitters. */
+:root {
+  color-scheme: dark;
+  --bg: #050608;
+  --panel: #0b0d10;
+  --head: #14171c;
+  --line: #262b33;
+  --grid: #14181d;
+  --fg: #e4e8ec;
+  --muted: #8a95a1;
+  --accent: #4f8cff;
+  --up: #23c26b;
+  --down: #f2545b;
+  --vwap: #e45cf0;
+  --pop: #171b21;
+  --bid-0: #1d4f7a; --bid-1: #173c5c; --bid-2: #122d44;
+  --ui: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+html { height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  height: 100%; background: var(--bg); color: var(--fg); font-family: var(--ui);
+  display: flex; flex-direction: column; overflow: hidden;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* top bar */
+.bar { display: flex; align-items: center; gap: 8px; padding-block: 8px; min-width: 0; }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; }
+.brand span { color: var(--accent); }
+.feed {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 99px;
+  border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+}
+.feed i { width: 7px; height: 7px; border-radius: 50%; background: #e0a526; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.spacer { flex: 1; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px;
+  border-radius: 7px; border: 1px solid var(--line); background: var(--head);
+  font-weight: 600; font-size: 13px; white-space: nowrap;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; }
+.seg button { border: 0; background: var(--head); padding: 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: #222a35; color: var(--fg); }
+@media (max-width: 560px) { .btn .lbl, .feed .lbl { display: none; } .btn { padding: 0 9px; } .brand { font-size: 14px; } }
+
+/* grid */
+.grid { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.row { display: flex; min-height: 0; min-width: 0; }
+.tile {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px; overflow: hidden;
+  container-type: inline-size;
+}
+.split { flex: none; position: relative; touch-action: none; }
+.split.h { height: 8px; cursor: row-resize; }
+.split.v { width: 8px; cursor: col-resize; }
+.split::after { content: ""; position: absolute; border-radius: 2px; background: var(--line); transition: background .15s; }
+.split.h::after { left: 50%; top: 2px; width: 34px; height: 4px; margin-left: -17px; }
+.split.v::after { top: 50%; left: 2px; height: 34px; width: 4px; margin-top: -17px; }
+.split:hover::after, .split.drag::after { background: var(--accent); }
+.grid.maxed .split, .grid.maxed .row:not(.has-max), .grid.maxed .tile:not(.max) { display: none; }
+
+/* tile header */
+.th {
+  display: flex; align-items: center; gap: 6px; padding: 3px 3px 3px 4px; min-width: 0; flex: none;
+  background: var(--head); border-bottom: 1px solid var(--line); font-family: var(--num); font-variant-numeric: tabular-nums;
+}
+.sym {
+  border: 1px solid var(--line); background: var(--panel); padding: 2px 4px 2px 6px; border-radius: 3px;
+  font-family: var(--ui); font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap; min-width: 62px; justify-content: space-between;
+}
+.sym svg { width: 9px; height: 9px; color: var(--muted); }
+.link {
+  width: 18px; height: 18px; flex: none; border-radius: 3px; border: 1px dashed var(--line); background: none;
+  font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0; color: var(--muted);
+}
+.link.on { border: 0; color: #fff; }
+.last { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.last.up { color: var(--up); } .last.down { color: var(--down); }
+.stack { display: grid; font-size: 10.5px; line-height: 1.2; white-space: nowrap; }
+.chg.up { color: var(--up); } .chg.down { color: var(--down); }
+.ba b { font-weight: 500; }
+.ba .bid { color: var(--down); } .ba .ask { color: var(--up); }
+.name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@container (max-width: 470px) { .ba { display: none; } }
+@container (max-width: 330px) { .chg { display: none; } }
+@container (max-width: 230px) { .last { font-size: 13px; } .link { display: none; } }
+.tf {
+  margin-left: auto; height: 24px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
+  font-family: var(--num); font-size: 12px; font-weight: 600; padding: 0 2px;
+}
+.ib { width: 26px; height: 24px; flex: none; border: 0; background: none; border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
+.ib:hover { background: #222a35; color: var(--fg); }
+.ib svg { width: 16px; height: 16px; }
+.body { flex: 1; min-height: 0; position: relative; }
+.legend {
+  position: absolute; left: 8px; top: 5px; z-index: 3; pointer-events: none;
+  font-family: var(--num); font-size: 11px; color: var(--muted);
+}
+.legend b { font-weight: 500; color: var(--vwap); }
+
+/* Level II and Time & Sales */
+.tbl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
+.book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 100%; }
+.side { background: var(--panel); }
+.r { display: grid; grid-template-columns: minmax(0, 1fr) 7ch 7ch; gap: 6px; padding: 2px 6px; white-space: nowrap; }
+.r > span { overflow: hidden; text-overflow: ellipsis; }
+.r > span + span { text-align: right; }
+.r.hd { position: sticky; top: 0; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: 11px; font-weight: 600; z-index: 1; }
+.lv0 { background: var(--bid-0); } .lv1 { background: var(--bid-1); } .lv2 { background: var(--bid-2); }
+.bidp { color: var(--down); } .askp { color: var(--up); }
+.r.lv0 .bidp, .r.lv0 .askp { font-weight: 600; }
+.tape .r { grid-template-columns: 9ch minmax(0, 1fr) 7ch; border-bottom: 1px solid var(--grid); }
+.tape .buy { color: var(--up); } .tape .sell { color: var(--down); } .tape .mid { color: var(--fg); }
+.tape .big { font-weight: 700; }
+@container (max-width: 380px) {
+  .book .r { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; padding: 2px 4px; font-size: 10.5px; }
+  .book .r > span:first-child { display: none; }
+  .book .r > span + span { text-align: left; }
+  .book .r > span:last-child { text-align: right; }
+  .tape .r { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; padding: 2px 4px; font-size: 11px; }
+}
+
+/* popover */
+.pop {
+  position: fixed; z-index: 50; background: var(--pop); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .6); padding: 8px; min-width: 210px; max-width: calc(100vw - 24px);
+}
+.pop h4 { margin: 4px 6px 8px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.menu { display: grid; gap: 2px; }
+.menu button {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; text-align: left;
+  border: 0; background: none; padding: 9px 10px; border-radius: 6px; font-size: 14px;
+}
+.menu button:hover:not(:disabled) { background: #222a35; }
+.menu button:disabled { color: var(--muted); cursor: default; }
+.menu button[aria-current="true"] { color: var(--accent); }
+.menu .danger { color: var(--down); }
+.menu small { color: var(--muted); font-size: 12px; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.check { width: 30px; height: 18px; border-radius: 99px; background: var(--line); position: relative; flex: none; }
+.check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.check.on { background: var(--vwap); } .check.on::after { transform: translateX(12px); }
+.presets { display: grid; grid-template-columns: repeat(4, 56px); gap: 8px; padding: 0 4px 4px; }
+.preset { width: 56px; height: 52px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: none; display: flex; flex-direction: column; gap: 2px; }
+.preset:hover { border-color: var(--accent); }
+.preset div { display: flex; gap: 2px; }
+.preset span { flex: 1; border-radius: 1.5px; background: #5d6875; }
+.preset span.l { background: var(--bid-0); } .preset span.t { background: #3a4552; }
+.symform { display: flex; gap: 6px; padding: 0 4px 8px; }
+.symform input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel); font-family: var(--num); font-weight: 600; text-transform: uppercase; font-size: 16px;
+}
+.picks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 4px 4px; }
+.picks button { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 6px 0; font-family: var(--num); font-size: 12px; font-weight: 600; }
+.picks button:hover { border-color: var(--accent); }
+.note { margin: 6px 6px 2px; font-size: 12px; color: var(--muted); max-width: 250px; line-height: 1.4; }
+@media (prefers-reduced-motion: reduce) { .feed i { animation: none; } }
+</style>
+
+<header class="bar">
+  <div class="brand">Multi<span>chart</span></div>
+  <div class="feed" title="Prices are simulated until your Schwab account is connected"><i></i><span class="lbl">Demo data</span></div>
+  <div class="spacer"></div>
+  <div class="seg" role="group" aria-label="Workspace mode">
+    <button id="modeAll" aria-pressed="true">Full</button>
+    <button id="modeCharts" aria-pressed="false">Charts only</button>
+  </div>
+  <button class="btn" id="layoutBtn" aria-label="Choose layout">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg>
+    <span class="lbl">Layout</span>
+  </button>
+  <button class="btn primary" id="addBtn" aria-label="Add panel">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>
+    <span class="lbl">Add</span>
+  </button>
+</header>
+<main class="grid" id="grid"></main>
+<div class="pop" id="pop" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(() => {
+/* ---------- demo market data ---------- */
+const TF = { '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '1h': 60, 'D': 'D', 'W': 'W' };
+const OPEN = 9 * 3600 + 30 * 60;           // 9:30 ET, stored as wall-clock seconds
+const SESSION = 390;                        // minutes per regular session
+const INTRADAY_DAYS = 10, DAILY_DAYS = 260, LIVE_START = 200;
+const BASE = { SPY: 580, QQQ: 505, IWM: 225, DIA: 425, AAPL: 232, MSFT: 425, NVDA: 138, TSLA: 252, AMZN: 188, META: 575, GOOGL: 165, AMD: 155, GLD: 368, UWMC: 1.42, IAUX: 1.46, HGRAF: 2.45 };
+const NAMES = { SPY: 'SPDR S&P 500 ETF', QQQ: 'Invesco QQQ Trust', IWM: 'iShares Russell 2000', DIA: 'SPDR Dow Jones ETF', AAPL: 'Apple Inc', MSFT: 'Microsoft Corp', NVDA: 'NVIDIA Corp', TSLA: 'Tesla Inc', AMZN: 'Amazon.com Inc', META: 'Meta Platforms', GOOGL: 'Alphabet Inc', AMD: 'Advanced Micro Devices', GLD: 'SPDR Gold Shares', UWMC: 'UWM Holdings', IAUX: 'i-80 Gold Corp', HGRAF: 'HighGold Mining' };
+const PICKS = ['SPY', 'QQQ', 'IWM', 'AAPL', 'NVDA', 'TSLA', 'AMD', 'META', 'GLD', 'UWMC', 'IAUX', 'HGRAF'];
+const VENUES = ['NSDQ', 'ARCA', 'NYSE', 'EDGX', 'BATS', 'IEX', 'MEMX', 'CBOE', 'MF/MM', 'OTC OTH', 'CHXE'];
+const LINK_COLORS = ['', '#e0a526', '#2fa7e0', '#e8644f', '#2fae5d', '#9b6cf0'];
+
+function rng(seed) {
+  return () => {
+    seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function gauss(r) { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+function tradingDays(n) {
+  const out = [], d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  while (out.length < n) {
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) out.unshift(d.getTime() / 1000);
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return out;
+}
+
+const stores = {};
+function store(sym) {
+  if (stores[sym]) return stores[sym];
+  const r = rng(hash(sym));
+  const days = tradingDays(DAILY_DAYS);
+  const dvol = 0.011 + r() * 0.014, mvol = dvol / Math.sqrt(SESSION);
+  const base = BASE[sym] ?? (20 + r() * 280);
+  let px = base * (0.82 + r() * 0.2);
+  const daily = [], m1 = [];
+  days.forEach((day, di) => {
+    if (di < DAILY_DAYS - INTRADAY_DAYS) {
+      const o = px * (1 + gauss(r) * dvol * 0.25), c = o * (1 + gauss(r) * dvol + 0.0004);
+      const h = Math.max(o, c) * (1 + Math.abs(gauss(r)) * dvol * 0.4);
+      const l = Math.min(o, c) * (1 - Math.abs(gauss(r)) * dvol * 0.4);
+      daily.push({ time: day, open: o, high: h, low: l, close: c, volume: Math.round(4e7 * (0.6 + r())) });
+      px = c;
+      return;
+    }
+    const mins = di === DAILY_DAYS - 1 ? LIVE_START : SESSION;
+    let p = px * (1 + gauss(r) * dvol * 0.25);
+    const dayBars = [];
+    for (let i = 0; i < mins; i++) {
+      const o = p, c = o * (1 + gauss(r) * mvol);
+      const h = Math.max(o, c) * (1 + Math.abs(gauss(r)) * mvol * 0.5);
+      const l = Math.min(o, c) * (1 - Math.abs(gauss(r)) * mvol * 0.5);
+      const shape = 1 + 12 * Math.pow(i / (SESSION - 1) - 0.5, 2);
+      const spike = r() < 0.02 ? 4 + r() * 6 : 1;
+      dayBars.push({ time: day + OPEN + i * 60, open: o, high: h, low: l, close: c, volume: Math.round(9e4 * shape * spike * (0.3 + r())) });
+      p = c;
+    }
+    m1.push(...dayBars);
+    daily.push(rollup(day, dayBars));
+    px = p;
+  });
+  const s = { sym, m1, daily, mvol, prevClose: daily[daily.length - 2].close, lastNew: Date.now(), dir: 'up', prints: [], book: null };
+  s.inc = tickSize(px);
+  requote(s);
+  for (let i = 0; i < 40; i++) addPrints(s, Date.now() - (40 - i) * 1500);
+  return stores[sym] = s;
+}
+function rollup(time, bars) {
+  return {
+    time, open: bars[0].open, close: bars[bars.length - 1].close,
+    high: Math.max(...bars.map(b => b.high)), low: Math.min(...bars.map(b => b.low)),
+    volume: bars.reduce((s, b) => s + b.volume, 0)
+  };
+}
+const tickSize = p => p < 1 ? 0.0001 : p < 5 ? 0.005 : 0.01;
+const dec = p => p < 1 ? 4 : p < 5 ? 3 : 2;
+const roundTo = (v, inc) => Math.round(v / inc) * inc;
+const last = s => s.m1[s.m1.length - 1].close;
+
+function requote(s) {
+  const p = last(s), inc = s.inc;
+  const spread = Math.max(inc, roundTo(p * 0.0003, inc));
+  s.bid = roundTo(p - spread / 2, inc);
+  s.ask = s.bid + Math.max(inc, roundTo(spread, inc));
+  const lot = p < 5 ? 1000 : 100;
+  const side = (top, sign) => {
+    const out = [];
+    for (let lv = 0; lv < 4; lv++) {
+      const n = lv === 0 ? 4 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 3);
+      const venues = [...VENUES].sort(() => Math.random() - 0.5).slice(0, n);
+      venues.forEach(v => out.push({ ex: v, price: top + sign * lv * inc, size: lot * (1 + Math.floor(Math.random() * (lv === 0 ? 40 : 15))), lv }));
+    }
+    return out.sort((a, b) => sign * (b.price - a.price) || b.size - a.size);
+  };
+  s.book = { bids: side(s.bid, -1), asks: side(s.ask, 1) };
+}
+const etTime = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function addPrints(s, at = Date.now()) {
+  const n = 1 + Math.floor(Math.random() * 3), p = last(s);
+  for (let i = 0; i < n; i++) {
+    const roll = Math.random();
+    const side = roll < 0.42 ? 'buy' : roll < 0.84 ? 'sell' : 'mid';
+    const price = side === 'buy' ? s.ask : side === 'sell' ? s.bid : roundTo(p, s.inc);
+    const size = Math.random() < 0.2 ? 1 + Math.floor(Math.random() * 99) : 100 * (1 + Math.floor(Math.random() * (Math.random() < 0.1 ? 50 : 5)));
+    s.prints.unshift({ t: etTime.format(at), price, size, side });
+  }
+  s.prints.length = Math.min(s.prints.length, 150);
+}
+
+function aggIntraday(m1, k) {
+  const out = []; let cur = null, key = -1;
+  for (const b of m1) {
+    const day = b.time - (b.time % 86400);
+    const t = day + OPEN + Math.floor((b.time - day - OPEN) / 60 / k) * k * 60;
+    if (t !== key) { cur = { ...b, time: t }; out.push(cur); key = t; }
+    else { cur.high = Math.max(cur.high, b.high); cur.low = Math.min(cur.low, b.low); cur.close = b.close; cur.volume += b.volume; }
+  }
+  return out;
+}
+function aggWeekly(daily) {
+  const out = []; let cur = null, key = -1;
+  for (const b of daily) {
+    const d = Math.floor(b.time / 86400), monday = d - ((d + 4) % 7 + 6) % 7, t = monday * 86400;
+    if (t !== key) { cur = { ...b, time: t }; out.push(cur); key = t; }
+    else { cur.high = Math.max(cur.high, b.high); cur.low = Math.min(cur.low, b.low); cur.close = b.close; cur.volume += b.volume; }
+  }
+  return out;
+}
+function bars(sym, tf) {
+  const s = store(sym), k = TF[tf];
+  if (k === 'D') return s.daily.map(b => ({ ...b }));
+  if (k === 'W') return aggWeekly(s.daily);
+  return aggIntraday(s.m1, k);
+}
+function vwap(list) {
+  let d = -1, pv = 0, vv = 0;
+  return list.map(b => {
+    const day = Math.floor(b.time / 86400);
+    if (day !== d) { d = day; pv = 0; vv = 0; }
+    pv += (b.high + b.low + b.close) / 3 * b.volume; vv += b.volume;
+    const pt = { time: b.time, value: pv / vv };
+    if (vv === b.volume && d !== -1) pt.color = 'rgba(0,0,0,0)';
+    return pt;
+  });
+}
+function tick(s) {
+  const now = Date.now(), today = s.daily[s.daily.length - 1];
+  const todayCount = s.m1.filter(b => b.time >= today.time).length;
+  const lb = s.m1[s.m1.length - 1], before = lb.close;
+  if (now - s.lastNew >= 60000 && todayCount < SESSION) {
+    s.lastNew = now;
+    const c = lb.close * (1 + gauss(Math.random) * s.mvol * 0.3);
+    s.m1.push({ time: lb.time + 60, open: lb.close, high: Math.max(lb.close, c), low: Math.min(lb.close, c), close: c, volume: Math.round(2e4 * (0.5 + Math.random())) });
+  } else {
+    const c = lb.close * (1 + gauss(Math.random) * s.mvol * 0.35);
+    lb.close = c; lb.high = Math.max(lb.high, c); lb.low = Math.min(lb.low, c);
+    lb.volume += Math.round(1500 * Math.random());
+  }
+  const nb = s.m1[s.m1.length - 1];
+  s.dir = nb.close >= before ? 'up' : 'down';
+  today.close = nb.close; today.high = Math.max(today.high, nb.high); today.low = Math.min(today.low, nb.low);
+  today.volume += 1500;
+  requote(s);
+  addPrints(s);
+}
+
+/* ---------- panels ---------- */
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const ICON = {
+  caret: '<svg viewBox="0 0 10 10" fill="currentColor"><path d="M1.5 3h7L5 7.5z"/></svg>',
+  more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>'
+};
+const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales' };
+const tiles = new Map();
+let maxed = null;
+
+class Tile {
+  constructor(cell) {
+    this.cell = cell;
+    this.kind = cell.kind;
+    const el = this.el = document.createElement('section');
+    el.className = 'tile';
+    const chart = this.kind === 'chart';
+    el.innerHTML = `
+      <div class="th">
+        <button class="sym" aria-label="Change symbol"></button>
+        <button class="link" aria-label="Link group"></button>
+        ${chart ? '' : '<span class="name"></span>'}
+        <span class="last"></span>
+        <span class="stack chg"><span class="c1"></span><span class="c2"></span></span>
+        <span class="stack ba"><span>B: <b class="bid"></b></span><span>A: <b class="ask"></b></span></span>
+        ${chart ? `<select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
+        <button class="ib more" aria-label="Panel options">${ICON.more}</button>
+      </div>
+      <div class="body"></div>`;
+    this.$ = sel => el.querySelector(sel);
+    this.$('.sym').addEventListener('click', e => symbolPop(e.currentTarget, this));
+    this.$('.link').addEventListener('click', e => linkPop(e.currentTarget, this));
+    this.$('.more').addEventListener('click', e => tileMenu(e.currentTarget, this));
+    if (chart) {
+      this.$('.tf').id = 'tf-' + cell.id;
+      this.$('.tf').addEventListener('change', e => { cell.tf = e.target.value; this.load(); save(); });
+      const body = this.$('.body');
+      body.innerHTML = '<div class="legend"></div>';
+      this.chart = LightweightCharts.createChart(body, {
+        autoSize: true,
+        layout: { background: { type: 'solid', color: css('--panel') }, textColor: css('--muted'), fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11 },
+        grid: { vertLines: { color: css('--grid') }, horzLines: { color: css('--grid') } },
+        rightPriceScale: { borderColor: css('--line'), scaleMargins: { top: 0.06, bottom: 0.24 } },
+        timeScale: { borderColor: css('--line'), rightOffset: 4 },
+        crosshair: { vertLine: { color: css('--muted'), labelBackgroundColor: '#2a313b' }, horzLine: { color: css('--muted'), labelBackgroundColor: '#2a313b' } }
+      });
+      const up = css('--up'), down = css('--down');
+      this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+      this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      this.candles = this.chart.addCandlestickSeries({ upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down });
+      this.vw = this.chart.addLineSeries({ color: css('--vwap'), lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+    } else {
+      this.$('.body').innerHTML = '<div class="tbl"></div>';
+    }
+    this.load();
+  }
+  get intraday() { return typeof TF[this.cell.tf] === 'number'; }
+  get showVwap() { return this.cell.vwap && this.intraday; }
+  volData(list) {
+    const up = css('--up') + '99', down = css('--down') + '99';
+    return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
+  }
+  load() {
+    const { sym } = this.cell;
+    this.$('.sym').innerHTML = `<span>${sym}</span>${ICON.caret}`;
+    const lk = this.$('.link'), g = this.cell.link || 0;
+    lk.textContent = g || '';
+    lk.classList.toggle('on', !!g);
+    lk.style.background = g ? LINK_COLORS[g] : '';
+    if (this.kind === 'chart') {
+      const s = store(sym);
+      this.$('.tf').value = this.cell.tf;
+      const list = bars(sym, this.cell.tf);
+      const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
+      this.candles.applyOptions({ priceFormat: fmt });
+      this.vw.applyOptions({ priceFormat: fmt });
+      this.candles.setData(list);
+      this.volume.setData(this.volData(list));
+      this.vw.setData(this.showVwap ? vwap(list) : []);
+      this.chart.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } });
+      const n = list.length, fit = () => this.chart.timeScale().setVisibleLogicalRange({ from: n - 150, to: n + 4 });
+      fit(); requestAnimationFrame(() => requestAnimationFrame(fit));
+    } else {
+      const n = this.$('.name');
+      n.textContent = NAMES[sym] || sym;
+    }
+    this.update();
+  }
+  update() {
+    const s = store(this.cell.sym), p = last(s), d = dec(p);
+    if (this.kind === 'chart') {
+      const list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
+      this.candles.update(lb);
+      this.volume.update(this.volData([lb])[0]);
+      const lg = this.$('.legend');
+      if (this.showVwap) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
+      else lg.innerHTML = '';
+    } else if (this.kind === 'l2') {
+      const rows = (list, cls, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
+        list.map(o => `<div class="r lv${Math.min(o.lv, 2)}"><span>${o.ex}</span><span class="${cls}">${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
+      this.$('.tbl').innerHTML = `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
+    } else {
+      this.$('.tbl').innerHTML = `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
+        s.prints.slice(0, 80).map(x => `<div class="r ${x.side}${x.size >= 2000 ? ' big' : ''}"><span>${x.t}</span><span>${x.price.toFixed(d)}</span><span>${x.size.toLocaleString()}</span></div>`).join('') + '</div>';
+    }
+    const ch = p - s.prevClose, pct = ch / s.prevClose * 100, sign = ch >= 0 ? '+' : '', cls = ch >= 0 ? 'up' : 'down';
+    const lastEl = this.$('.last');
+    lastEl.textContent = p.toFixed(d);
+    lastEl.className = 'last ' + s.dir;
+    this.$('.c1').textContent = sign + ch.toFixed(d);
+    this.$('.c2').textContent = sign + pct.toFixed(2) + '%';
+    this.$('.chg').className = 'stack chg ' + cls;
+    this.$('.bid').textContent = s.bid.toFixed(d);
+    this.$('.ask').textContent = s.ask.toFixed(d);
+  }
+  destroy() { if (this.chart) this.chart.remove(); }
+}
+
+/* ---------- layout state ---------- */
+const KEY = 'multichart-layout-v2';
+const DEFAULT_CHARTS = [
+  { sym: 'HGRAF', tf: '1m' }, { sym: 'GLD', tf: '2m' }, { sym: 'UWMC', tf: '1m' }, { sym: 'IAUX', tf: '1m' },
+  { sym: 'SPY', tf: '5m' }, { sym: 'QQQ', tf: '15m' }
+];
+// Each preset is rows of panel codes: c = chart, l = Level II, t = Time & Sales.
+const PRESETS = [
+  ['c'], ['cc'], ['c', 'c'], ['c', 'cc'], ['cc', 'cc'], ['cc', 'cc', 'cc'],
+  ['c', 'lt'], ['c', 'c', 'lt'], ['cc', 'll', 'tt'], ['cc', 'cc', 'll', 'tt']
+];
+const CODE = { c: 'chart', l: 'l2', t: 'ts' };
+let nextId = 1;
+const newCell = (kind, extra) => ({ id: 'p' + nextId++, kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
+
+let state = { rows: [], chartsOnly: false };
+const allCells = () => state.rows.flatMap(r => r.cells);
+
+function fromPreset(shape) {
+  const pool = { chart: [], l2: [], ts: [] };
+  allCells().forEach(c => pool[c.kind].push(c));
+  let ci = 0;
+  const rows = shape.map(code => ({
+    size: code.includes('c') ? 3 : 1.5,
+    cells: [...code].map(ch => {
+      const kind = CODE[ch];
+      const reuse = pool[kind].shift();
+      if (reuse) return { ...reuse, size: 1 };
+      if (kind === 'chart') { const d = DEFAULT_CHARTS[(allCells().filter(c => c.kind === 'chart').length + ci++) % DEFAULT_CHARTS.length]; return newCell(kind, d); }
+      return newCell(kind);
+    })
+  }));
+  // Link each Level II / Time & Sales column to the chart above it in the last chart row.
+  const chartRows = rows.filter(r => r.cells.some(c => c.kind === 'chart'));
+  const lastCharts = chartRows.length ? chartRows[chartRows.length - 1].cells : [];
+  let g = 0;
+  rows.forEach(r => r.cells.forEach((c, j) => {
+    if (c.kind === 'chart' || !lastCharts.length) return;
+    const target = lastCharts[Math.min(j, lastCharts.length - 1)];
+    if (!target.link) target.link = nextLink(rows, ++g);
+    c.link = target.link; c.sym = target.sym;
+  }));
+  return rows;
+}
+function nextLink(rows, want) {
+  const used = new Set(rows.flatMap(r => r.cells.map(c => c.link)).filter(Boolean));
+  for (let i = 0; i < 5; i++) { const g = ((want - 1 + i) % 5) + 1; if (!used.has(g)) return g; }
+  return want;
+}
+
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY));
+  if (saved && saved.rows && saved.rows.length) {
+    state = saved;
+    allCells().forEach(c => { if (!TF[c.tf]) c.tf = '5m'; if (!KINDS[c.kind]) c.kind = 'chart'; nextId = Math.max(nextId, +c.id.slice(1) + 1); });
+  }
+} catch (e) {}
+if (!state.rows.length) state.rows = fromPreset(innerWidth < 700 ? ['c', 'c', 'lt'] : ['cc', 'cc', 'll', 'tt']);
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+const visible = c => !state.chartsOnly || c.kind === 'chart';
+
+/* ---------- render ---------- */
+const grid = document.getElementById('grid');
+function render() {
+  grid.textContent = '';
+  const live = new Set();
+  const view = state.rows.map(row => ({ row, cells: row.cells.filter(visible) })).filter(v => v.cells.length);
+  if (maxed && !view.some(v => v.cells.some(c => c.id === maxed))) maxed = null;
+  view.forEach((v, ri) => {
+    if (ri > 0) grid.append(splitter('h', view.map(x => x.row), ri - 1));
+    const rEl = document.createElement('div');
+    rEl.className = 'row';
+    rEl.style.flex = `${v.row.size} 1 0`;
+    v.cells.forEach((cell, ci) => {
+      if (ci > 0) rEl.append(splitter('v', v.cells, ci - 1));
+      let t = tiles.get(cell.id);
+      if (t && t.kind !== cell.kind) { t.destroy(); tiles.delete(cell.id); t = null; }
+      if (!t) { t = new Tile(cell); tiles.set(cell.id, t); }
+      t.cell = cell;
+      t.el.style.flex = `${cell.size} 1 0`;
+      t.el.classList.toggle('max', maxed === cell.id);
+      if (maxed === cell.id) rEl.classList.add('has-max');
+      rEl.append(t.el);
+      live.add(cell.id);
+    });
+    grid.append(rEl);
+  });
+  for (const [id, t] of tiles) if (!live.has(id)) { t.destroy(); tiles.delete(id); }
+  grid.classList.toggle('maxed', !!maxed);
+  document.getElementById('modeAll').setAttribute('aria-pressed', String(!state.chartsOnly));
+  document.getElementById('modeCharts').setAttribute('aria-pressed', String(state.chartsOnly));
+  save();
+}
+
+// Drag a splitter: sizes are relative weights, so hidden panels keep their share.
+function splitter(kind, items, i) {
+  const s = document.createElement('div');
+  s.className = 'split ' + kind;
+  s.setAttribute('role', 'separator');
+  s.setAttribute('aria-orientation', kind === 'h' ? 'horizontal' : 'vertical');
+  s.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    s.setPointerCapture(e.pointerId);
+    s.classList.add('drag');
+    const vertical = kind === 'h';
+    const els = [...s.parentElement.children].filter(c => c.classList.contains(vertical ? 'row' : 'tile'));
+    const px = els.map(el => { const r = el.getBoundingClientRect(); return vertical ? r.height : r.width; });
+    const k = items.reduce((a, it) => a + it.size, 0) / px.reduce((a, b) => a + b, 0);
+    items.forEach((it, j) => { it.size = px[j] * k; });
+    const a = px[i], b = px[i + 1], start = vertical ? e.clientY : e.clientX, min = vertical ? 70 : 110;
+    const move = ev => {
+      let d = (vertical ? ev.clientY : ev.clientX) - start;
+      d = Math.max(min - a, Math.min(b - min, d));
+      items[i].size = (a + d) * k; items[i + 1].size = (b - d) * k;
+      els[i].style.flex = `${items[i].size} 1 0`; els[i + 1].style.flex = `${items[i + 1].size} 1 0`;
+    };
+    const up = () => { s.classList.remove('drag'); s.removeEventListener('pointermove', move); s.removeEventListener('pointerup', up); s.removeEventListener('pointercancel', up); save(); };
+    s.addEventListener('pointermove', move);
+    s.addEventListener('pointerup', up);
+    s.addEventListener('pointercancel', up);
+  });
+  return s;
+}
+
+function toggleMax(t) { maxed = maxed === t.cell.id ? null : t.cell.id; render(); }
+function setSymbol(t, sym) {
+  const g = t.cell.link;
+  allCells().forEach(c => { if (c === t.cell || (g && c.link === g)) c.sym = sym; });
+  tiles.forEach(x => { if (x.cell === t.cell || (g && x.cell.link === g)) x.load(); });
+  save();
+}
+
+function addPanel(kind) {
+  maxed = null;
+  if (kind !== 'chart') state.chartsOnly = false;
+  const cap = innerWidth < 700 ? 2 : 3;
+  const charts = allCells().filter(c => c.kind === 'chart');
+  const cell = kind === 'chart'
+    ? newCell('chart', DEFAULT_CHARTS[charts.length % DEFAULT_CHARTS.length])
+    : newCell(kind);
+  if (kind !== 'chart' && charts.length) {
+    const target = charts[0];
+    if (!target.link) target.link = nextLink(state.rows, 1);
+    cell.link = target.link; cell.sym = target.sym;
+  }
+  const lastRow = state.rows[state.rows.length - 1];
+  const sameKind = lastRow && lastRow.cells.every(c => (c.kind === 'chart') === (kind === 'chart'));
+  if (lastRow && sameKind && lastRow.cells.length < cap) {
+    const avg = lastRow.cells.reduce((a, c) => a + c.size, 0) / lastRow.cells.length;
+    cell.size = avg; lastRow.cells.push(cell);
+  } else {
+    const avg = state.rows.length ? state.rows.reduce((a, r) => a + r.size, 0) / state.rows.length : 1;
+    state.rows.push({ size: kind === 'chart' ? avg : avg / 2, cells: [cell] });
+  }
+  render();
+}
+function removePanel(id) {
+  if (allCells().length < 2) return;
+  state.rows.forEach(r => { r.cells = r.cells.filter(c => c.id !== id); });
+  state.rows = state.rows.filter(r => r.cells.length);
+  render();
+}
+
+/* ---------- popovers ---------- */
+const pop = document.getElementById('pop');
+let popAnchor = null;
+function openPop(anchor, html, bind) {
+  if (popAnchor === anchor && !pop.hidden) return closePop();
+  popAnchor = anchor;
+  pop.innerHTML = html;
+  pop.hidden = false;
+  bind(pop);
+  const a = anchor.getBoundingClientRect(), p = pop.getBoundingClientRect();
+  const left = Math.max(12, Math.min(innerWidth - p.width - 12, a.left));
+  let top = a.bottom + 6;
+  if (top + p.height > innerHeight - 12) top = Math.max(12, a.top - p.height - 6);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+}
+function closePop() { pop.hidden = true; popAnchor = null; }
+document.addEventListener('pointerdown', e => { if (!pop.hidden && !pop.contains(e.target) && !popAnchor.contains(e.target)) closePop(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+
+function tileMenu(anchor, t) {
+  const isChart = t.kind === 'chart', can = t.intraday, isMax = maxed === t.cell.id, only = allCells().length < 2;
+  openPop(anchor, `
+    <div class="menu">
+      ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
+      <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
+      <hr>
+      ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
+      <hr>
+      <button data-a="del" class="danger" ${only ? 'disabled' : ''}><span>Remove panel</span></button>
+    </div>`, p => {
+    const v = p.querySelector('[data-a=vwap]');
+    if (v) v.onclick = () => { t.cell.vwap = !t.cell.vwap; t.load(); save(); closePop(); };
+    p.querySelector('[data-a=max]').onclick = () => { closePop(); toggleMax(t); };
+    p.querySelector('[data-a=del]').onclick = () => { closePop(); removePanel(t.cell.id); };
+    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
+  });
+}
+
+function linkPop(anchor, t) {
+  openPop(anchor, `
+    <h4>Link group</h4>
+    <div class="menu">
+      ${[0, 1, 2, 3, 4, 5].map(g => `<button data-g="${g}" aria-current="${(t.cell.link || 0) === g}"><span>${g ? 'Group ' + g : 'Not linked'}</span>${g ? `<span class="link on" style="background:${LINK_COLORS[g]}">${g}</span>` : ''}</button>`).join('')}
+    </div>
+    <p class="note">Panels in the same group always show the same symbol.</p>`, p => {
+    p.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
+      const g = +b.dataset.g;
+      t.cell.link = g;
+      const leader = g && allCells().find(c => c !== t.cell && c.link === g);
+      if (leader) t.cell.sym = leader.sym;
+      t.load(); save(); closePop();
+    });
+  });
+}
+
+function symbolPop(anchor, t) {
+  openPop(anchor, `
+    <h4>Symbol</h4>
+    <form class="symform"><input id="symInput" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="8" value="${t.cell.sym}" aria-label="Ticker symbol"><button class="btn primary" type="submit">Go</button></form>
+    <div class="picks">${PICKS.map(s => `<button data-s="${s}">${s}</button>`).join('')}</div>`, p => {
+    const set = sym => { sym = sym.trim().toUpperCase().replace(/[^A-Z0-9.\/]/g, ''); if (!sym) return; setSymbol(t, sym); closePop(); };
+    p.querySelector('form').onsubmit = e => { e.preventDefault(); set(p.querySelector('input').value); };
+    p.querySelectorAll('[data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
+    if (matchMedia('(pointer: fine)').matches) p.querySelector('input').select();
+  });
+}
+
+document.getElementById('layoutBtn').addEventListener('click', e => {
+  const cls = { c: '', l: 'l', t: 't' };
+  openPop(e.currentTarget, `
+    <h4>Layout</h4>
+    <div class="presets">${PRESETS.map((shape, i) => `<button class="preset" data-i="${i}" aria-label="Layout ${i + 1}">${shape.map(code => `<div style="flex:${code.includes('c') ? 2 : 1}">${[...code].map(ch => `<span class="${cls[ch]}"></span>`).join('')}</div>`).join('')}</button>`).join('')}</div>
+    <p class="note">Grey is a chart, blue is Level II, dark grey is Time & Sales. Drag the bars between panels to resize. Your layout is saved on this device.</p>`, p => {
+    p.querySelectorAll('.preset').forEach(b => b.onclick = () => {
+      maxed = null;
+      const shape = PRESETS[+b.dataset.i];
+      if (shape.some(code => /[lt]/.test(code))) state.chartsOnly = false;
+      state.rows = fromPreset(shape);
+      render(); closePop();
+    });
+  });
+});
+document.getElementById('addBtn').addEventListener('click', e => {
+  openPop(e.currentTarget, `
+    <h4>Add panel</h4>
+    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}"><span>${label}</span></button>`).join('')}</div>`, p => {
+    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); addPanel(b.dataset.k); });
+  });
+});
+document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; render(); });
+document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; render(); });
+
+/* ---------- go ---------- */
+render();
+setInterval(() => {
+  new Set(allCells().map(c => c.sym)).forEach(s => tick(store(s)));
+  tiles.forEach(t => t.update());
+}, 700);
+})();
+</script>
