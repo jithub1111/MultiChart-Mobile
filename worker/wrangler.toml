@@ -1,4 +1,5 @@
-# The deploy workflow (.github/workflows/deploy-worker.yml) fills in the KV id.
+# The deploy workflow (.github/workflows/deploy-worker.yml) reads the name and compatibility date
+# from here and uploads through Cloudflare's API; KV_ID is only used for local wrangler runs.
 name = "multichart-schwab"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
