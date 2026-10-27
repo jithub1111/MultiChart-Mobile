@@ -72,6 +72,21 @@ jobs:
 
       - name: Store the Schwab keys and app password
         run: |
-          printf '%s' "$SCHWAB_APP_KEY" | $WRANGLER secret put SCHWAB_APP_KEY
-          printf '%s' "$SCHWAB_APP_SECRET" | $WRANGLER secret put SCHWAB_APP_SECRET
-          printf '%s' "$APP_PASSWORD" | $WRANGLER secret put APP_PASSWORD
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers"
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          for name in SCHWAB_APP_KEY SCHWAB_APP_SECRET APP_PASSWORD; do
+            body=$(jq -n --arg n "$name" --arg v "${!name}" '{name: $n, text: $v, type: "secret_text"}')
+            res=$(curl -sS -X PUT -H "$auth" -H "Content-Type: application/json" --data "$body" "$base/scripts/multichart-schwab/secrets")
+            if [ "$(jq -r .success <<< "$res" 2>/dev/null)" != "true" ]; then
+              echo "::error::Could not save $name: $(jq -r '[.errors[]? | "\(.code) \(.message)"] | join("; ")' <<< "$res" 2>/dev/null || echo "$res" | head -c 300)"
+              exit 1
+            fi
+            echo "Saved $name"
+          done
+
+      - name: Show the helper address
+        run: |
+          sub=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+          if [ -n "$sub" ]; then
+            echo "::notice title=Schwab helper address::https://multichart-schwab.$sub.workers.dev"
+          fi
