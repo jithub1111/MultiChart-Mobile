@@ -558,9 +558,24 @@ function tick(s) {
 // IEX bars and live IEX trades fill in the latest stretch until the SIP bars catch up.
 // Level II stays simulated around the real IEX bid/ask: no free source has market depth.
 const DATA_KEY = 'multichart-data-v1';
-let dataCfg = { mode: 'demo', key: '', secret: '', base: '', stream: '', helper: '', pass: '' };
+// George's own helper, so a new device only needs the app password (or a setup link) to go live.
+const DEFAULT_HELPER = 'https://multichart-schwab.georgenehmi1.workers.dev';
+let dataCfg = { mode: 'schwab', key: '', secret: '', base: '', stream: '', helper: DEFAULT_HELPER, pass: '' };
 try { dataCfg = { ...dataCfg, ...JSON.parse(localStorage.getItem(DATA_KEY)) }; } catch (e) {}
 if (dataCfg.mode === 'live') dataCfg.mode = 'alpaca';
+// A setup link (made under Data source → Schwab) carries the helper and app password in #live=…
+// The part after # never reaches a server, and it is cleared from the address bar right away.
+const b64 = { enc: t => btoa(String.fromCharCode(...new TextEncoder().encode(t))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: t => new TextDecoder().decode(Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))) };
+if (location.hash.startsWith('#live=')) {
+  try {
+    const j = JSON.parse(b64.dec(location.hash.slice(6)));
+    if (j.h && j.p) dataCfg = { ...dataCfg, mode: 'schwab', helper: j.h, pass: j.p };
+    localStorage.setItem(DATA_KEY, JSON.stringify(dataCfg));
+  } catch (e) {}
+  try { window.history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+}
+const setupLink = () => location.origin + location.pathname + '#live=' + b64.enc(JSON.stringify({ h: dataCfg.helper, p: dataCfg.pass }));
 const isLive = () => dataCfg.mode === 'alpaca' ? !!dataCfg.key && !!dataCfg.secret : dataCfg.mode === 'schwab' ? !!dataCfg.helper && !!dataCfg.pass : false;
 const SOURCE = { alpaca: 'IEX', schwab: 'Schwab' };
 let feed = { state: 'demo', msg: '' };
@@ -1818,7 +1833,7 @@ function paintDataStatus() {
   const el = sheet.querySelector('.status');
   if (!el) return;
   const text = {
-    demo: 'Using demo data. Prices are simulated.',
+    demo: dataCfg.mode === 'schwab' ? 'Enter your app password below and tap Save to go live with Schwab.' : 'Using demo data. Prices are simulated.',
     connecting: 'Connecting to Alpaca…',
     live: dataCfg.mode === 'schwab' ? 'Live. Prices, Level II and trades are streaming from Schwab.' : 'Live. Prices and trades are streaming from Alpaca (IEX).',
     error: feed.msg || 'Something went wrong.'
@@ -1854,6 +1869,10 @@ function openData() {
       <label class="field">Address of the page Schwab sent you to<input id="dsPaste" autocomplete="off" spellcheck="false" placeholder="https://127.0.0.1/?code=…"></label>
       <div class="row2"><button class="btn primary" id="dsFinish">Finish sign-in</button></div>
       <p>Schwab asks you to sign in again every 7 days.</p>
+      <h4>Your other devices</h4>
+      <p>Open this link on your phone or another computer and the app goes live there straight away. It contains your app password, so only send it to yourself.</p>
+      <div class="row2"><button class="btn" id="dsCopyLink">Copy setup link</button></div>
+      <label class="field" id="dsLinkBox" hidden>Setup link<input id="dsLink" readonly></label>
       <h4>What is live</h4>
       <ul>
         <li><b>Charts</b>: full-market candles, including pre-market and after-hours.</li>
@@ -1915,6 +1934,12 @@ function openData() {
     applyData({ mode: 'schwab', helper: h, pass: pw });
     openData();
   };
+  $('dsCopyLink').onclick = async () => {
+    if (!dataCfg.helper || !dataCfg.pass) return note('Save the helper address and app password first.');
+    const link = setupLink();
+    try { await navigator.clipboard.writeText(link); toast('Setup link copied. Send it to yourself and open it on the other device.'); }
+    catch (e) { $('dsLinkBox').hidden = false; $('dsLink').value = link; $('dsLink').select(); }
+  };
   $('dsOpenSchwab').onclick = () => {
     if (!dataCfg.helper) return note('Save the helper address first.');
     window.open(helperBase() + '/login', '_blank', 'noopener');
@@ -1949,6 +1974,8 @@ document.documentElement.style.setProperty('--scale', uiScale());
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();
+// A new device only lacks the app password: ask for it right away.
+if (dataCfg.mode === 'schwab' && !dataCfg.pass) { openData(); sheet.querySelector('#dsPass').focus(); }
 setInterval(() => {
   if (isLive()) { wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); }); syncStream(); }
   else wanted().forEach(sym => tick(store(sym)));
