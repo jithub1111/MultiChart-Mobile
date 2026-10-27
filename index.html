@@ -470,6 +470,7 @@ function requote(s) {
     s.bid = roundTo(p - spread / 2, inc);
     s.ask = s.bid + Math.max(inc, roundTo(spread, inc));
   }
+  if (s.realBook) return;
   const lot = p < 5 ? 1000 : 100;
   const side = (top, sign) => {
     const out = [];
@@ -557,17 +558,19 @@ function tick(s) {
 // IEX bars and live IEX trades fill in the latest stretch until the SIP bars catch up.
 // Level II stays simulated around the real IEX bid/ask: no free source has market depth.
 const DATA_KEY = 'multichart-data-v1';
-let dataCfg = { mode: 'demo', key: '', secret: '', base: '', stream: '' };
+let dataCfg = { mode: 'demo', key: '', secret: '', base: '', stream: '', helper: '', pass: '' };
 try { dataCfg = { ...dataCfg, ...JSON.parse(localStorage.getItem(DATA_KEY)) }; } catch (e) {}
-const isLive = () => dataCfg.mode === 'live' && !!dataCfg.key && !!dataCfg.secret;
+if (dataCfg.mode === 'live') dataCfg.mode = 'alpaca';
+const isLive = () => dataCfg.mode === 'alpaca' ? !!dataCfg.key && !!dataCfg.secret : dataCfg.mode === 'schwab' ? !!dataCfg.helper && !!dataCfg.pass : false;
+const SOURCE = { alpaca: 'IEX', schwab: 'Schwab' };
 let feed = { state: 'demo', msg: '' };
 function setFeed(state, msg = '') {
   feed = { state, msg };
   const el = document.getElementById('feedBtn');
   if (!el) return;
   el.dataset.state = state;
-  el.querySelector('.lbl').textContent = { demo: 'Demo data', connecting: 'Connecting', live: 'Live · IEX', error: 'Data problem' }[state];
-  el.title = msg || { demo: 'Prices are simulated. Tap to connect live data.', connecting: 'Connecting to Alpaca', live: 'Live prices from Alpaca (IEX)', error: '' }[state];
+  el.querySelector('.lbl').textContent = { demo: 'Demo data', connecting: 'Connecting', live: 'Live · ' + SOURCE[dataCfg.mode], error: 'Data problem' }[state];
+  el.title = msg || { demo: 'Prices are simulated. Tap to connect live data.', connecting: 'Connecting', live: 'Live prices from ' + (dataCfg.mode === 'schwab' ? 'Schwab' : 'Alpaca (IEX)'), error: '' }[state];
   const sh = document.getElementById('sheet');
   if (!sh.hidden && sh.dataset.kind === 'data') paintDataStatus();
 }
@@ -633,29 +636,14 @@ function liveStore(sym) {
   return s;
 }
 async function loadLive(s) {
-  const sym = s.sym, now = Date.now();
+  const sym = s.sym;
   try {
-    const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 420 * 864e5)]);
+    await (dataCfg.mode === 'schwab' ? loadSchwab(s) : loadAlpaca(s));
     if (stores[sym] !== s) return;
-    if (!m1.length && !daily.length) throw new DataError(`No data for ${sym}. The free feed covers US-listed stocks and ETFs, not OTC.`, 'empty');
-    // If the daily feed has no bar for the latest session yet, build one from its minute bars.
-    const lm = m1[m1.length - 1], ld = daily[daily.length - 1];
-    if (lm) { const day = lm.time - lm.time % 86400; if (!ld || ld.time < day) daily.push(rollup(day, m1.filter(b => b.time >= day))); }
-    s.m1 = m1; s.daily = daily;
-    s.prevClose = daily.length > 1 ? daily[daily.length - 2].close : daily[0].close;
-    try {
-      const snap = await api(`/v2/stocks/${encodeURIComponent(sym)}/snapshot`, { feed: 'iex' });
-      if (snap.latestQuote) { s.qb = snap.latestQuote.bp; s.qa = snap.latestQuote.ap; }
-    } catch (e) {}
     s.inc = tickSize(last(s));
     requote(s);
-    try {
-      const j = await api(`/v2/stocks/${encodeURIComponent(sym)}/trades`, { feed: 'iex', start: new Date(now - 5 * 864e5).toISOString(), limit: 80, sort: 'desc' });
-      (j.trades || []).reverse().forEach(t => addTrade(s, t, true));
-    } catch (e) {}
-    if (stores[sym] !== s) return;
     s.ready = true;
-    if (feed.state === 'error' && /keys|reach/.test(feed.msg)) setFeed(ws && ws.authed ? 'live' : 'connecting');
+    if (feed.state === 'error' && /keys|reach|password|sign/i.test(feed.msg)) setFeed(ws && ws.authed ? 'live' : 'connecting');
   } catch (e) {
     if (stores[sym] !== s) return;
     s.error = e.message; s.errCode = e.code;
@@ -665,10 +653,33 @@ async function loadLive(s) {
   reloadSym(sym);
   syncStream();
 }
+// Shared by both live sources once the history has arrived.
+function settle(s, m1, daily, emptyMsg) {
+  if (!m1.length && !daily.length) throw new DataError(emptyMsg, 'empty');
+  // If the daily feed has no bar for the latest session yet, build one from its minute bars.
+  const lm = m1[m1.length - 1], ld = daily[daily.length - 1];
+  if (lm) { const day = lm.time - lm.time % 86400; if (!ld || ld.time < day) daily.push(rollup(day, m1.filter(b => b.time >= day))); }
+  s.m1 = m1; s.daily = daily;
+  s.prevClose = daily.length > 1 ? daily[daily.length - 2].close : daily[0].close;
+}
+async function loadAlpaca(s) {
+  const sym = s.sym, now = Date.now();
+  const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 420 * 864e5)]);
+  settle(s, m1, daily, `No data for ${sym}. The free feed covers US-listed stocks and ETFs, not OTC.`);
+  try {
+    const snap = await api(`/v2/stocks/${encodeURIComponent(sym)}/snapshot`, { feed: 'iex' });
+    if (snap.latestQuote) { s.qb = snap.latestQuote.bp; s.qa = snap.latestQuote.ap; }
+  } catch (e) {}
+  s.inc = tickSize(last(s));
+  requote(s);
+  try {
+    const j = await api(`/v2/stocks/${encodeURIComponent(sym)}/trades`, { feed: 'iex', start: new Date(now - 5 * 864e5).toISOString(), limit: 80, sort: 'desc' });
+    (j.trades || []).reverse().forEach(t => addTrade(s, tms(t.t), t.p, t.s, true));
+  } catch (e) {}
+}
 function reloadSym(sym, keepView) { tiles.forEach(t => { if (t.cell.sym === sym) t.load(keepView); }); }
 
-function addTrade(s, t, tapeOnly) {
-  const ms = tms(t.t), price = t.p, size = t.s;
+function addTrade(s, ms, price, size, tapeOnly) {
   const side = s.ask && price >= s.ask ? 'buy' : s.bid && price <= s.bid ? 'sell' : 'mid';
   s.prints.unshift({ t: etTime.format(ms), price, size, side });
   if (s.prints.length > 150) s.prints.length = 150;
@@ -685,7 +696,7 @@ function addTrade(s, t, tapeOnly) {
 }
 // Every minute, swap the IEX-only minutes that are now old enough for full-market ones.
 async function backfill() {
-  if (!isLive()) return;
+  if (!isLive() || dataCfg.mode !== 'alpaca') return;
   for (const s of Object.values(stores)) {
     if (!s.ready || !s.sipUntil || !wanted().has(s.sym)) continue;
     const cut = Date.now() - SIP_DELAY;
@@ -706,12 +717,13 @@ const wanted = () => new Set([...allCells().map(c => c.sym), ...alerts.filter(a 
 function closeStream() {
   clearTimeout(wsTimer);
   if (ws) { ws.onclose = null; ws.close(); }
-  ws = null; wsSyms = new Set();
+  ws = null; wsSyms = new Set(); sKeys = '';
 }
 function syncStream() {
   if (!isLive()) return closeStream();
   if (!ws) { if (!wsTimer) openStream(); return; }
   if (!ws.authed) return;
+  if (ws.schwab) return syncSchwab();
   const want = new Set([...wanted()].filter(x => stores[x] && stores[x].ready));
   const drop = [...wsSyms].filter(x => !want.has(x));
   if (drop.length) { ws.send(JSON.stringify({ action: 'unsubscribe', trades: drop, quotes: drop })); drop.forEach(x => wsSyms.delete(x)); }
@@ -720,6 +732,7 @@ function syncStream() {
 }
 function openStream() {
   wsTimer = 0;
+  if (dataCfg.mode === 'schwab') return openSchwab();
   if (feed.state !== 'error') setFeed('connecting');
   let sock;
   try { sock = new WebSocket(dataCfg.stream || 'wss://stream.data.alpaca.markets/v2/iex'); }
@@ -741,7 +754,7 @@ function openStream() {
         setFeed('error', { 402: 'Alpaca did not accept the keys. Check the Key ID and Secret.', 406: 'Live data is already open somewhere else (another tab or device). The free plan allows one connection, so close the other one. Retrying every 30 seconds.', 405: 'Too many symbols: the free plan streams up to 30 at once.', 409: 'Your Alpaca plan does not include this live feed.' }[m.code] || `Live feed error: ${m.msg}`);
         if (m.code === 406) wsTries = 5;
       }
-      else if (m.T === 't') { const s = stores[m.S]; if (s && s.live && s.ready) addTrade(s, m); }
+      else if (m.T === 't') { const s = stores[m.S]; if (s && s.live && s.ready) addTrade(s, tms(m.t), m.p, m.s); }
       else if (m.T === 'q') { const s = stores[m.S]; if (s && s.live) { s.qb = m.bp; s.qa = m.ap; } }
     }
   };
@@ -752,6 +765,140 @@ function openStream() {
     if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Alpaca. Reconnecting.' : 'Could not open the live connection to Alpaca. Retrying.');
     wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
   };
+}
+/* ---------- live data (Schwab) ---------- */
+// The Schwab app keys live in a small helper (worker/ in this repo) that also keeps the
+// weekly sign-in fresh. The page asks it for history and for a token for Schwab's live stream.
+const helperBase = () => { const u = dataCfg.helper.trim().replace(/\/+$/, ''); return /^https?:\/\//.test(u) ? u : 'https://' + u; };
+async function helper(path, body) {
+  let r;
+  try {
+    r = await fetch(helperBase() + path, body
+      ? { method: 'POST', headers: { 'X-App-Password': dataCfg.pass, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      : { headers: { 'X-App-Password': dataCfg.pass } });
+  } catch (e) { throw new DataError('Could not reach your Schwab helper. Check the helper address and that you are online.', 'net'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new DataError(j.error || `Your Schwab helper returned an error (${r.status}).`, j.code || r.status);
+  return j;
+}
+const candles = (j, daily) => (j.candles || []).map(c => {
+  const t = etSec(c.datetime);
+  return { time: daily ? t - t % 86400 : t, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume };
+});
+async function loadSchwab(s) {
+  const q = `/pricehistory?symbol=${encodeURIComponent(s.sym)}&`;
+  const [m, d] = await Promise.all([
+    helper(q + 'periodType=day&period=10&frequencyType=minute&frequency=1&needExtendedHoursData=true'),
+    helper(q + 'periodType=year&period=2&frequencyType=daily&frequency=1')
+  ]);
+  settle(s, candles(m), candles(d, true), `No data for ${s.sym}. Check the symbol.`);
+  try {
+    const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote`);
+    const qt = j[s.sym] && j[s.sym].quote;
+    if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; }
+  } catch (e) {}
+}
+
+let sInfo = null, sReq = 1, sKeys = '', schwabUntil = 0;
+const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,35'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
+function sSend(sock, service, command, parameters) {
+  sock.send(JSON.stringify({ requests: [{ requestid: String(sReq++), service, command, SchwabClientCustomerId: sInfo.schwabClientCustomerId, SchwabClientCorrelId: sInfo.schwabClientCorrelId, parameters }] }));
+}
+function syncSchwab() {
+  const keys = [...wanted()].filter(x => stores[x] && stores[x].ready).sort().join(',');
+  if (keys === sKeys) return;
+  S_SUBS.forEach(([svc, fields]) => { if (keys) sSend(ws, svc, 'SUBS', { keys, fields }); else sSend(ws, svc, 'UNSUBS', { keys: sKeys }); });
+  sKeys = keys;
+}
+async function openSchwab() {
+  const hold = { schwab: true, close() {} };
+  ws = hold;
+  if (feed.state !== 'error') setFeed('connecting');
+  let sess;
+  try { sess = await helper('/session'); }
+  catch (e) {
+    if (ws !== hold) return;
+    ws = null;
+    setFeed('error', e.message);
+    if (e.code !== 'signin' && e.code !== 'password') wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
+    return;
+  }
+  if (ws !== hold) return;
+  sInfo = sess.streamer;
+  schwabUntil = sess.refreshExp;
+  if (schwabUntil - Date.now() < 864e5) toast('Your weekly Schwab sign-in ends within a day. Sign in again from <b>Data source → Schwab</b>.', true);
+  let sock;
+  try { sock = new WebSocket(sInfo.streamerSocketUrl); }
+  catch (e) { ws = null; setFeed('error', 'This page is not allowed to open a live connection to Schwab.'); return; }
+  sock.schwab = true;
+  ws = sock;
+  sock.onopen = () => sSend(sock, 'ADMIN', 'LOGIN', { Authorization: sess.accessToken, SchwabClientChannel: sInfo.schwabClientChannel, SchwabClientFunctionId: sInfo.schwabClientFunctionId });
+  sock.onmessage = e => {
+    let m;
+    try { m = JSON.parse(e.data); } catch (err) { return; }
+    [...(m.response || []), ...(m.notify || [])].forEach(r => {
+      const code = r.content && r.content.code;
+      if (r.service === 'ADMIN' && r.command === 'LOGIN') {
+        if (code === 0) {
+          sock.authed = true; wsTries = 0; sKeys = '';
+          const bad = Object.values(stores).find(x => x.error && x.errCode !== 'empty');
+          setFeed(bad ? 'error' : 'live', bad ? bad.error : '');
+          syncStream();
+        } else {
+          sock.fatal = true;
+          setFeed('error', `Schwab's live stream refused the sign-in (${(r.content && r.content.msg) || 'no reason given'}). Try signing in again.`);
+          sock.close();
+        }
+      } else if (code === 12 || code === 30) {
+        setFeed('error', 'Schwab live data was opened somewhere else (another tab or device), which closed it here. Retrying every 30 seconds.');
+        wsTries = 5;
+      } else if (code === 19) setFeed('error', 'Schwab says too many symbols are streaming at once.');
+    });
+    (m.data || []).forEach(onSchwabData);
+  };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    ws = null; sKeys = '';
+    if (!isLive() || sock.fatal) return;
+    if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Schwab. Reconnecting.' : 'Could not open the live connection to Schwab. Retrying.');
+    wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
+  };
+}
+function onSchwabData(d) {
+  (d.content || []).forEach(c => {
+    const s = stores[c.key];
+    if (!s || !s.live || !s.ready) return;
+    if (d.service === 'LEVELONE_EQUITIES') {
+      if (c[1] != null) s.qb = c[1];
+      if (c[2] != null) s.qa = c[2];
+      if (s.qb > 0 && s.qa >= s.qb) { s.bid = s.qb; s.ask = s.qa; }
+      // Schwab has no tape feed, so each new last-trade time becomes one print.
+      const l1 = s.l1 || (s.l1 = {});
+      const fresh = c[35] != null && c[35] !== l1.t;
+      if (c[3] != null) l1.p = c[3];
+      if (c[9] != null) l1.z = c[9];
+      if (c[35] != null) l1.t = c[35];
+      if (fresh && l1.p != null) addTrade(s, l1.t, l1.p, l1.z || 0);
+    } else if (d.service === 'CHART_EQUITY') {
+      // Schwab's finished minute bar replaces the one built from trades.
+      const t = etSec(c[7]), bar = { time: t, open: c[2], high: c[3], low: c[4], close: c[5], volume: c[6] };
+      let i = s.m1.length - 1;
+      while (i >= 0 && s.m1[i].time > t) i--;
+      if (i >= 0 && s.m1[i].time === t) s.m1[i] = bar; else s.m1.splice(i + 1, 0, bar);
+      if (s.m1[s.m1.length - 1] !== bar) reloadSym(s.sym, true);
+    } else if (/_BOOK$/.test(d.service)) {
+      const side = levels => {
+        const out = [];
+        levels.slice(0, 6).forEach((L, lv) => {
+          const mms = L[3] && L[3].length ? L[3] : [{ 0: '', 1: L[1] }];
+          mms.forEach(mm => out.push({ ex: mm[0] || '—', price: L[0], size: mm[1], lv }));
+        });
+        return out;
+      };
+      s.book = { bids: c[2] ? side(c[2]) : (s.realBook ? s.book.bids : []), asks: c[3] ? side(c[3]) : (s.realBook ? s.book.asks : []) };
+      s.realBook = true;
+    }
+  });
 }
 function applyData(cfg) {
   dataCfg = { ...dataCfg, ...cfg };
@@ -919,7 +1066,7 @@ class Tile {
     } else if (this.kind === 'l2') {
       const rows = (list, cls, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
         list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
-      this.$('.tbl').innerHTML = (s.live ? '<div class="simnote">Depth simulated · top is IEX bid/ask</div>' : '') + `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
+      this.$('.tbl').innerHTML = (s.live && !s.realBook ? `<div class="simnote">${dataCfg.mode === 'schwab' ? 'Waiting for Schwab\'s book · depth simulated' : 'Depth simulated · top is IEX bid/ask'}</div>` : '') + `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
     } else {
       this.$('.tbl').innerHTML = `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
         s.prints.slice(0, 80).map(x => `<div class="r ${x.side}${x.size >= 2000 ? ' big' : ''}"><span>${x.t}</span><span>${x.price.toFixed(d)}</span><span>${x.size.toLocaleString()}</span></div>`).join('') + '</div>';
@@ -1672,7 +1819,7 @@ function paintDataStatus() {
   const text = {
     demo: 'Using demo data. Prices are simulated.',
     connecting: 'Connecting to Alpaca…',
-    live: 'Live. Prices and trades are streaming from Alpaca (IEX).',
+    live: dataCfg.mode === 'schwab' ? 'Live. Prices, Level II and trades are streaming from Schwab.' : 'Live. Prices and trades are streaming from Alpaca (IEX).',
     error: feed.msg || 'Something went wrong.'
   }[feed.state];
   el.dataset.state = feed.state;
@@ -1682,15 +1829,39 @@ function openData() {
   closePop();
   sheet.dataset.kind = 'data';
   sheet.setAttribute('aria-label', 'Data source');
-  const live = dataCfg.mode === 'live';
+  const mode = dataCfg.mode;
   sheet.innerHTML = `<div class="zin">
     <div class="sheet-head"><h3>Data source</h3><button class="ib" id="sheetClose" aria-label="Close data source">${CLOSE_X}</button></div>
     <div class="seg" role="group" aria-label="Data source">
-      <button id="dsDemo" aria-pressed="${!live}">Demo</button>
-      <button id="dsLive" aria-pressed="${live}">Live (Alpaca)</button>
+      ${[['demo', 'Demo'], ['schwab', 'Schwab'], ['alpaca', 'Alpaca']].map(([m, label]) => `<button data-mode="${m}" aria-pressed="${mode === m}">${label}</button>`).join('')}
     </div>
     <div class="status"></div>
-    <div id="liveBox" ${live ? '' : 'hidden'}>
+    <div class="srcbox" data-for="schwab" ${mode === 'schwab' ? '' : 'hidden'}>
+      <h4>Your Schwab helper</h4>
+      <label class="field">Helper address<input id="dsHelper" autocomplete="off" spellcheck="false" placeholder="https://multichart-schwab.yourname.workers.dev" value="${esc(dataCfg.helper)}"></label>
+      <label class="field">App password<input id="dsPass" type="password" autocomplete="off" value="${esc(dataCfg.pass)}"></label>
+      <p>The helper address is shown on the GitHub Actions page after the helper is set up. The app password is the APP_PASSWORD you chose.</p>
+      <div class="row2"><button class="btn primary" id="dsHelperSave">Save</button></div>
+      <h4>Sign in to Schwab</h4>
+      <p id="dsSignState">${dataCfg.helper && dataCfg.pass ? 'Checking…' : 'Save the helper address and password first.'}</p>
+      <ol>
+        <li>Tap <b>Open Schwab sign-in</b>, log in with your Schwab login, and allow access.</li>
+        <li>Schwab then sends you to a page that does not load. That is expected. Copy that page's whole address from the address bar.</li>
+        <li>Paste it here and tap <b>Finish sign-in</b>.</li>
+      </ol>
+      <div class="row2"><button class="btn" id="dsOpenSchwab">Open Schwab sign-in</button></div>
+      <label class="field">Address of the page Schwab sent you to<input id="dsPaste" autocomplete="off" spellcheck="false" placeholder="https://127.0.0.1/?code=…"></label>
+      <div class="row2"><button class="btn primary" id="dsFinish">Finish sign-in</button></div>
+      <p>Schwab asks you to sign in again every 7 days.</p>
+      <h4>What is live</h4>
+      <ul>
+        <li><b>Charts</b>: full-market candles, including pre-market and after-hours.</li>
+        <li><b>Last price and bid/ask</b>: real time.</li>
+        <li><b>Level II</b>: real Nasdaq and NYSE order books.</li>
+        <li><b>Time &amp; Sales</b>: built from Schwab's last-trade updates. Schwab has no full tape feed, so busy stocks show fewer prints than thinkorswim.</li>
+      </ul>
+    </div>
+    <div class="srcbox" data-for="alpaca" ${mode === 'alpaca' ? '' : 'hidden'}>
       <h4>Alpaca keys</h4>
       <label class="field">Key ID<input id="dsKey" autocomplete="off" spellcheck="false" value="${esc(dataCfg.key)}"></label>
       <label class="field">Secret key<input id="dsSecret" type="password" autocomplete="off" spellcheck="false" value="${esc(dataCfg.secret)}"></label>
@@ -1717,17 +1888,53 @@ function openData() {
   sheet.hidden = false;
   paintDataStatus();
   const $ = id => sheet.querySelector('#' + id);
+  const note = (msg, state = 'error') => { setFeed(state, msg); paintDataStatus(); };
   $('sheetClose').onclick = () => { sheet.hidden = true; };
-  $('dsDemo').onclick = () => { applyData({ mode: 'demo' }); openData(); };
-  $('dsLive').onclick = () => {
-    $('dsDemo').setAttribute('aria-pressed', 'false'); $('dsLive').setAttribute('aria-pressed', 'true');
-    $('liveBox').hidden = false;
-    if (dataCfg.key && dataCfg.secret) { applyData({ mode: 'live' }); openData(); } else $('dsKey').focus();
+  sheet.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
+    const m = b.dataset.mode;
+    sheet.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    sheet.querySelectorAll('.srcbox').forEach(x => { x.hidden = x.dataset.for !== m; });
+    const ready = m === 'demo' || (m === 'alpaca' ? dataCfg.key && dataCfg.secret : dataCfg.helper && dataCfg.pass);
+    if (ready && m !== dataCfg.mode) { applyData({ mode: m }); openData(); }
+  });
+  // Schwab
+  const signState = async () => {
+    const el = $('dsSignState');
+    if (!el || !dataCfg.helper || !dataCfg.pass) return;
+    try {
+      const st = await helper('/status');
+      el.innerHTML = st.signedIn
+        ? `Signed in. This sign-in lasts until <b>${esc(new Date(st.refreshExp).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</b>.`
+        : '<b>Not signed in yet.</b> Follow the steps below.';
+    } catch (e) { el.textContent = e.message; }
   };
+  $('dsHelperSave').onclick = () => {
+    const h = $('dsHelper').value.trim(), pw = $('dsPass').value;
+    if (!h || !pw) return note('Enter both the helper address and the app password.');
+    applyData({ mode: 'schwab', helper: h, pass: pw });
+    openData();
+  };
+  $('dsOpenSchwab').onclick = () => {
+    if (!dataCfg.helper) return note('Save the helper address first.');
+    window.open(helperBase() + '/login', '_blank', 'noopener');
+  };
+  $('dsFinish').onclick = async () => {
+    const pasted = $('dsPaste').value.trim();
+    if (!pasted) return note('Paste the address of the page Schwab sent you to.');
+    $('dsFinish').disabled = true;
+    try {
+      await helper('/token', { url: pasted });
+      applyData({ mode: 'schwab' });
+      openData();
+      toast('Signed in to Schwab.');
+    } catch (e) { note(e.message); $('dsFinish').disabled = false; }
+  };
+  if (mode === 'schwab') signState();
+  // Alpaca
   $('dsSave').onclick = () => {
     const key = $('dsKey').value.trim(), secret = $('dsSecret').value.trim();
-    if (!key || !secret) { setFeed('error', 'Enter both the Key ID and the Secret key.'); paintDataStatus(); return; }
-    applyData({ mode: 'live', key, secret, base: $('dsBase').value.trim(), stream: $('dsStream').value.trim() });
+    if (!key || !secret) return note('Enter both the Key ID and the Secret key.');
+    applyData({ mode: 'alpaca', key, secret, base: $('dsBase').value.trim(), stream: $('dsStream').value.trim() });
     openData();
   };
   $('dsForget').onclick = () => { applyData({ mode: 'demo', key: '', secret: '' }); openData(); };
