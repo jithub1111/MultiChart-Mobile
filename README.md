@@ -38,7 +38,7 @@ Cloudflare Workers. The helper keeps your Schwab app keys and your sign-in, so t
 
 1. In Cloudflare, open **Workers & Pages** once, then create an API token from the **Edit Cloudflare Workers** template
 2. In this repository's **Settings → Secrets and variables → Actions**, add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-   `SCHWAB_APP_KEY`, `SCHWAB_APP_SECRET` and `APP_PASSWORD` (a password you choose)
+   `SCHWAB_APP_KEY` (Schwab calls it Client ID), `SCHWAB_APP_SECRET` (Client Secret) and `APP_PASSWORD` (a password you choose)
 3. The **Deploy Schwab helper** action runs whenever `worker/` changes on `main` (or run it by hand from the Actions tab).
    Its summary shows the helper address
 4. In the app, open **Data source → Schwab**, enter the helper address and app password, then follow the sign-in steps
