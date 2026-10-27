@@ -786,10 +786,11 @@ const candles = (j, daily) => (j.candles || []).map(c => {
   return { time: daily ? t - t % 86400 : t, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume };
 });
 async function loadSchwab(s) {
-  const q = `/pricehistory?symbol=${encodeURIComponent(s.sym)}&`;
+  // Without an explicit end date Schwab stops at the previous trading day, leaving out today.
+  const q = `/pricehistory?symbol=${encodeURIComponent(s.sym)}&endDate=${Date.now() + 60e3}&`;
   const [m, d] = await Promise.all([
-    helper(q + 'periodType=day&period=10&frequencyType=minute&frequency=1&needExtendedHoursData=true'),
-    helper(q + 'periodType=year&period=2&frequencyType=daily&frequency=1')
+    helper(q + `periodType=day&frequencyType=minute&frequency=1&needExtendedHoursData=true&startDate=${Date.now() - 10 * 864e5}`),
+    helper(q + `periodType=year&frequencyType=daily&frequency=1&startDate=${Date.now() - 2 * 365 * 864e5}`)
   ]);
   settle(s, candles(m), candles(d, true), `No data for ${s.sym}. Check the symbol.`);
   try {
