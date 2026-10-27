@@ -57,6 +57,12 @@ button { cursor: pointer; }
   letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
 }
 .feed i { width: 7px; height: 7px; border-radius: 50%; background: #e0a526; animation: pulse 1.6s ease-in-out infinite; }
+button.feed { background: none; height: 26px; cursor: pointer; }
+button.feed:hover { background: var(--hover); color: var(--fg); }
+.feed[data-state="connecting"] i { background: #2fa7e0; }
+.feed[data-state="live"] i { background: #2fae5d; }
+.feed[data-state="live"] { color: var(--fg); }
+.feed[data-state="error"] i { background: #e8644f; animation: none; }
 @keyframes pulse { 50% { opacity: .3; } }
 .spacer { flex: 1; }
 .btn {
@@ -167,6 +173,9 @@ button { cursor: pointer; }
 .legend b { font-weight: 500; color: var(--vwap); }
 
 /* Level II and Time & Sales */
+.msg { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; zoom: var(--scale); pointer-events: none; }
+.msg.err { color: var(--fg); }
+.simnote { position: sticky; top: 0; z-index: 1; padding: 2px 6px; font-family: system-ui, sans-serif; font-size: 10px; color: var(--muted); background: var(--head); border-bottom: 1px solid var(--line); }
 .tbl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
 .book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 100%; }
 .side { background: var(--panel); }
@@ -240,7 +249,7 @@ button { cursor: pointer; }
 .zoomctl .zlabel { font-size: 11px; min-width: 50px; justify-content: center; font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 4px; border-inline: 1px solid var(--line); }
 .zoomctl button:disabled { opacity: .35; cursor: default; }
 @media (max-width: 560px) {
-  .bar { gap: 5px; } .feed { display: none; } .seg button { padding: 0 8px; }
+  .bar { gap: 5px; } .feed { padding: 3px 7px; } .seg button { padding: 0 8px; }
   .zoomctl button { padding: 0 8px; } .zoomctl .zlabel { min-width: 38px; font-size: 10px; }
 }
 
@@ -315,13 +324,25 @@ button { cursor: pointer; }
 .crow input::-webkit-color-swatch-wrapper { padding: 2px; }
 .crow input::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .sheet .reset { margin-top: 18px; width: 100%; justify-content: center; }
+.sheet p, .sheet li { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.sheet p { margin: 6px 0; } .sheet ol, .sheet ul { margin: 6px 0; padding-left: 20px; }
+.sheet p b, .sheet li b { color: var(--fg); font-weight: 600; }
+.sheet a { color: var(--accent); }
+.sheet .seg { width: 100%; } .sheet .seg button { flex: 1; font-size: 13px; }
+.field { display: block; margin: 8px 0; font-size: 12px; color: var(--muted); }
+.field input { display: block; width: 100%; margin-top: 4px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px var(--num); }
+.status { margin: 10px 0 4px; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+.status i { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: #e0a526; }
+.status[data-state="connecting"] i { background: #2fa7e0; } .status[data-state="live"] i { background: #2fae5d; } .status[data-state="error"] i { background: #e8644f; }
+.sheet details { margin-top: 14px; font-size: 13px; color: var(--muted); } .sheet summary { cursor: pointer; }
+.sheet .row2 { display: flex; gap: 8px; margin-top: 10px; } .sheet .row2 .btn { flex: 1; justify-content: center; }
 @media (max-width: 400px) { .brand { display: none; } .bar { gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { .feed i { animation: none; } }
 </style>
 
 <header class="bar">
   <div class="brand">Multi<span>chart</span></div>
-  <div class="feed" title="Prices are simulated until your Schwab account is connected"><i></i><span class="lbl">Demo data</span></div>
+  <button class="feed" id="feedBtn" data-state="demo" aria-label="Data source"><i></i><span class="lbl">Demo data</span></button>
   <button class="btn primary" id="editBtn" aria-pressed="false">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
     <span class="lbl">Edit layout</span>
@@ -388,9 +409,10 @@ function tradingDays(n) {
   return out;
 }
 
-const stores = {};
-function store(sym) {
-  if (stores[sym]) return stores[sym];
+let stores = {};
+function store(sym) { return stores[sym] || (isLive() ? liveStore(sym) : demoStore(sym)); }
+const ready = s => s.ready !== false;
+function demoStore(sym) {
   const r = rng(hash(sym));
   const days = tradingDays(DAILY_DAYS);
   const dvol = 0.011 + r() * 0.014, mvol = dvol / Math.sqrt(SESSION);
@@ -438,13 +460,16 @@ function rollup(time, bars) {
 const tickSize = p => p < 1 ? 0.0001 : p < 5 ? 0.005 : 0.01;
 const dec = p => p < 1 ? 4 : p < 5 ? 3 : 2;
 const roundTo = (v, inc) => Math.round(v / inc) * inc;
-const last = s => s.m1[s.m1.length - 1].close;
+const last = s => s.m1.length ? s.m1[s.m1.length - 1].close : s.daily.length ? s.daily[s.daily.length - 1].close : NaN;
 
 function requote(s) {
   const p = last(s), inc = s.inc;
-  const spread = Math.max(inc, roundTo(p * 0.0003, inc));
-  s.bid = roundTo(p - spread / 2, inc);
-  s.ask = s.bid + Math.max(inc, roundTo(spread, inc));
+  if (s.live && s.qb > 0 && s.qa >= s.qb) { s.bid = s.qb; s.ask = s.qa; }
+  else {
+    const spread = Math.max(inc, roundTo(p * 0.0003, inc));
+    s.bid = roundTo(p - spread / 2, inc);
+    s.ask = s.bid + Math.max(inc, roundTo(spread, inc));
+  }
   const lot = p < 5 ? 1000 : 100;
   const side = (top, sign) => {
     const out = [];
@@ -527,6 +552,218 @@ function tick(s) {
   addPrints(s);
 }
 
+/* ---------- live data (Alpaca's free plan) ---------- */
+// Charts use full-market (SIP) minute bars, which the free plan holds back 15 minutes;
+// IEX bars and live IEX trades fill in the latest stretch until the SIP bars catch up.
+// Level II stays simulated around the real IEX bid/ask: no free source has market depth.
+const DATA_KEY = 'multichart-data-v1';
+let dataCfg = { mode: 'demo', key: '', secret: '', base: '', stream: '' };
+try { dataCfg = { ...dataCfg, ...JSON.parse(localStorage.getItem(DATA_KEY)) }; } catch (e) {}
+const isLive = () => dataCfg.mode === 'live' && !!dataCfg.key && !!dataCfg.secret;
+let feed = { state: 'demo', msg: '' };
+function setFeed(state, msg = '') {
+  feed = { state, msg };
+  const el = document.getElementById('feedBtn');
+  if (!el) return;
+  el.dataset.state = state;
+  el.querySelector('.lbl').textContent = { demo: 'Demo data', connecting: 'Connecting', live: 'Live · IEX', error: 'Data problem' }[state];
+  el.title = msg || { demo: 'Prices are simulated. Tap to connect live data.', connecting: 'Connecting to Alpaca', live: 'Live prices from Alpaca (IEX)', error: '' }[state];
+  const sh = document.getElementById('sheet');
+  if (!sh.hidden && sh.dataset.kind === 'data') paintDataStatus();
+}
+
+const SIP_DELAY = 16 * 60e3;
+const tzParts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const tzOff = new Map();
+// The app's clock is New York wall-clock time, stored as if it were UTC.
+function etSec(ms) {
+  const hr = Math.floor(ms / 36e5);
+  let off = tzOff.get(hr);
+  if (off === undefined) {
+    const p = Object.fromEntries(tzParts.formatToParts(new Date(hr * 36e5)).map(x => [x.type, x.value]));
+    off = Date.UTC(+p.year, p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - hr * 36e5;
+    tzOff.set(hr, off);
+  }
+  return Math.floor((ms + off) / 1000);
+}
+const tms = t => Date.parse(t.replace(/(\.\d{3})\d+/, '$1'));
+
+class DataError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
+async function api(path, params = {}) {
+  const url = new URL((dataCfg.base || 'https://data.alpaca.markets').replace(/\/+$/, '') + path);
+  Object.entries(params).forEach(([k, v]) => { if (v != null) url.searchParams.set(k, v); });
+  let r;
+  try { r = await fetch(url, { headers: { 'APCA-API-KEY-ID': dataCfg.key, 'APCA-API-SECRET-KEY': dataCfg.secret } }); }
+  catch (e) { throw new DataError('This page could not reach Alpaca. Either you are offline, or the page is hosted somewhere that blocks outside connections (the Claude preview does).', 'net'); }
+  if (r.ok) return r.json();
+  const body = await r.text().catch(() => '');
+  if (r.status === 403 && /subscription/i.test(body)) throw new DataError('Your Alpaca plan does not include this data.', 'plan');
+  if (r.status === 401 || r.status === 403) throw new DataError('Alpaca did not accept the keys. Check the Key ID and Secret.', 'auth');
+  if (r.status === 429) throw new DataError('Too many requests to Alpaca. It will retry shortly.', 'rate');
+  throw new DataError(`Alpaca returned an error (${r.status}).`, r.status);
+}
+async function fetchBars(sym, timeframe, feedName, start, end) {
+  const out = [];
+  let page = null, n = 0;
+  do {
+    const j = await api(`/v2/stocks/${encodeURIComponent(sym)}/bars`, {
+      timeframe, feed: feedName, adjustment: 'split', limit: 10000, page_token: page,
+      start: new Date(start).toISOString(), end: end ? new Date(end).toISOString() : null
+    });
+    (j.bars || []).forEach(b => out.push({ time: etSec(tms(b.t)), open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
+    page = j.next_page_token;
+  } while (page && ++n < 8);
+  return out;
+}
+// Full-market bars up to 16 minutes ago, then IEX bars for the rest.
+async function history(s, timeframe, start) {
+  const cut = Date.now() - SIP_DELAY;
+  let sip = [];
+  try { sip = await fetchBars(s.sym, timeframe, 'sip', start, cut); }
+  catch (e) { if (e.code !== 'plan') throw e; }
+  if (sip.length && timeframe === '1Min') s.sipUntil = cut;
+  const iex = await fetchBars(s.sym, timeframe, 'iex', sip.length ? cut : start);
+  const lastT = sip.length ? sip[sip.length - 1].time : -Infinity;
+  return [...sip, ...iex.filter(b => b.time > lastT)];
+}
+
+function liveStore(sym) {
+  const s = stores[sym] = { sym, live: true, ready: false, m1: [], daily: [], prints: [], book: null, bid: 0, ask: 0, qb: 0, qa: 0, inc: 0.01, dir: 'up', prevClose: 0 };
+  loadLive(s);
+  return s;
+}
+async function loadLive(s) {
+  const sym = s.sym, now = Date.now();
+  try {
+    const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 420 * 864e5)]);
+    if (stores[sym] !== s) return;
+    if (!m1.length && !daily.length) throw new DataError(`No data for ${sym}. The free feed covers US-listed stocks and ETFs, not OTC.`, 'empty');
+    // If the daily feed has no bar for the latest session yet, build one from its minute bars.
+    const lm = m1[m1.length - 1], ld = daily[daily.length - 1];
+    if (lm) { const day = lm.time - lm.time % 86400; if (!ld || ld.time < day) daily.push(rollup(day, m1.filter(b => b.time >= day))); }
+    s.m1 = m1; s.daily = daily;
+    s.prevClose = daily.length > 1 ? daily[daily.length - 2].close : daily[0].close;
+    try {
+      const snap = await api(`/v2/stocks/${encodeURIComponent(sym)}/snapshot`, { feed: 'iex' });
+      if (snap.latestQuote) { s.qb = snap.latestQuote.bp; s.qa = snap.latestQuote.ap; }
+    } catch (e) {}
+    s.inc = tickSize(last(s));
+    requote(s);
+    try {
+      const j = await api(`/v2/stocks/${encodeURIComponent(sym)}/trades`, { feed: 'iex', start: new Date(now - 5 * 864e5).toISOString(), limit: 80, sort: 'desc' });
+      (j.trades || []).reverse().forEach(t => addTrade(s, t, true));
+    } catch (e) {}
+    if (stores[sym] !== s) return;
+    s.ready = true;
+    if (feed.state === 'error' && /keys|reach/.test(feed.msg)) setFeed(ws && ws.authed ? 'live' : 'connecting');
+  } catch (e) {
+    if (stores[sym] !== s) return;
+    s.error = e.message; s.errCode = e.code;
+    if (e.code !== 'empty') setFeed('error', e.message);
+    if (e.code === 'rate' || e.code === 'net') setTimeout(() => { if (stores[sym] === s) { delete stores[sym]; reloadSym(sym); } }, 20000);
+  }
+  reloadSym(sym);
+  syncStream();
+}
+function reloadSym(sym, keepView) { tiles.forEach(t => { if (t.cell.sym === sym) t.load(keepView); }); }
+
+function addTrade(s, t, tapeOnly) {
+  const ms = tms(t.t), price = t.p, size = t.s;
+  const side = s.ask && price >= s.ask ? 'buy' : s.bid && price <= s.bid ? 'sell' : 'mid';
+  s.prints.unshift({ t: etTime.format(ms), price, size, side });
+  if (s.prints.length > 150) s.prints.length = 150;
+  if (tapeOnly) return;
+  const sec = etSec(ms), min = sec - sec % 60, day = sec - sec % 86400, before = last(s);
+  const lb = s.m1[s.m1.length - 1];
+  if (lb && lb.time === min) { lb.high = Math.max(lb.high, price); lb.low = Math.min(lb.low, price); lb.close = price; lb.volume += size; }
+  else if (!lb || min > lb.time) s.m1.push({ time: min, open: price, high: price, low: price, close: price, volume: size });
+  else return; // a late print for an older minute: the full-market bars will cover it
+  const ld = s.daily[s.daily.length - 1];
+  if (ld && ld.time === day) { ld.high = Math.max(ld.high, price); ld.low = Math.min(ld.low, price); ld.close = price; ld.volume += size; }
+  else if (!ld || day > ld.time) { s.prevClose = ld ? ld.close : price; s.daily.push({ time: day, open: price, high: price, low: price, close: price, volume: size }); }
+  s.dir = price >= before ? 'up' : 'down';
+}
+// Every minute, swap the IEX-only minutes that are now old enough for full-market ones.
+async function backfill() {
+  if (!isLive()) return;
+  for (const s of Object.values(stores)) {
+    if (!s.ready || !s.sipUntil || !wanted().has(s.sym)) continue;
+    const cut = Date.now() - SIP_DELAY;
+    try {
+      const fresh = await fetchBars(s.sym, '1Min', 'sip', s.sipUntil - 60e3, cut);
+      if (stores[s.sym] !== s) continue;
+      const at = new Map(s.m1.map((b, i) => [b.time, i]));
+      fresh.forEach(b => { const i = at.get(b.time); if (i != null) s.m1[i] = b; else s.m1.push(b); });
+      s.m1.sort((a, b) => a.time - b.time);
+      s.sipUntil = cut;
+      reloadSym(s.sym, true);
+    } catch (e) {}
+  }
+}
+
+let ws = null, wsSyms = new Set(), wsTries = 0, wsTimer = 0;
+const wanted = () => new Set([...allCells().map(c => c.sym), ...alerts.filter(a => a.status === 'active').map(a => a.sym)]);
+function closeStream() {
+  clearTimeout(wsTimer);
+  if (ws) { ws.onclose = null; ws.close(); }
+  ws = null; wsSyms = new Set();
+}
+function syncStream() {
+  if (!isLive()) return closeStream();
+  if (!ws) { if (!wsTimer) openStream(); return; }
+  if (!ws.authed) return;
+  const want = new Set([...wanted()].filter(x => stores[x] && stores[x].ready));
+  const drop = [...wsSyms].filter(x => !want.has(x));
+  if (drop.length) { ws.send(JSON.stringify({ action: 'unsubscribe', trades: drop, quotes: drop })); drop.forEach(x => wsSyms.delete(x)); }
+  const add = [...want].filter(x => !wsSyms.has(x)).slice(0, Math.max(0, 30 - wsSyms.size));
+  if (add.length) { ws.send(JSON.stringify({ action: 'subscribe', trades: add, quotes: add })); add.forEach(x => wsSyms.add(x)); }
+}
+function openStream() {
+  wsTimer = 0;
+  if (feed.state !== 'error') setFeed('connecting');
+  let sock;
+  try { sock = new WebSocket(dataCfg.stream || 'wss://stream.data.alpaca.markets/v2/iex'); }
+  catch (e) { setFeed('error', 'This page is not allowed to open a live connection to Alpaca.'); return; }
+  ws = sock;
+  sock.onopen = () => sock.send(JSON.stringify({ action: 'auth', key: dataCfg.key, secret: dataCfg.secret }));
+  sock.onmessage = e => {
+    let msgs;
+    try { msgs = JSON.parse(e.data); } catch (err) { return; }
+    for (const m of msgs) {
+      if (m.T === 'success' && m.msg === 'authenticated') {
+        sock.authed = true; wsTries = 0;
+        const bad = Object.values(stores).find(x => x.error && x.errCode !== 'empty');
+        setFeed(bad ? 'error' : 'live', bad ? bad.error : '');
+        syncStream();
+      }
+      else if (m.T === 'error') {
+        sock.fatal = m.code === 402 || m.code === 409;
+        setFeed('error', { 402: 'Alpaca did not accept the keys. Check the Key ID and Secret.', 406: 'Live data is already open somewhere else (another tab or device). The free plan allows one connection, so close the other one. Retrying every 30 seconds.', 405: 'Too many symbols: the free plan streams up to 30 at once.', 409: 'Your Alpaca plan does not include this live feed.' }[m.code] || `Live feed error: ${m.msg}`);
+        if (m.code === 406) wsTries = 5;
+      }
+      else if (m.T === 't') { const s = stores[m.S]; if (s && s.live && s.ready) addTrade(s, m); }
+      else if (m.T === 'q') { const s = stores[m.S]; if (s && s.live) { s.qb = m.bp; s.qa = m.ap; } }
+    }
+  };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    ws = null; wsSyms = new Set();
+    if (!isLive() || sock.fatal) return;
+    if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Alpaca. Reconnecting.' : 'Could not open the live connection to Alpaca. Retrying.');
+    wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
+  };
+}
+function applyData(cfg) {
+  dataCfg = { ...dataCfg, ...cfg };
+  try { localStorage.setItem(DATA_KEY, JSON.stringify(dataCfg)); } catch (e) {}
+  closeStream();
+  wsTries = 0;
+  stores = {};
+  setFeed(isLive() ? 'connecting' : 'demo');
+  tiles.forEach(t => t.load());
+  syncStream();
+}
+
 /* ---------- panels ---------- */
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const ICON = {
@@ -587,7 +824,7 @@ class Tile {
       this.$('.tf').id = 'tf-' + cell.id;
       this.$('.tf').addEventListener('change', e => { cell.tf = e.target.value; this.load(); save(); });
       const body = this.$('.body');
-      body.innerHTML = '<div class="legend"></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div>';
+      body.innerHTML = '<div class="legend"></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
       this.$('.hint button').addEventListener('click', () => this.setMode(null));
       this.lines = [];
@@ -616,7 +853,7 @@ class Tile {
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
     } else {
-      this.$('.body').innerHTML = '<div class="tbl"></div>';
+      this.$('.body').innerHTML = '<div class="tbl"></div><div class="msg" hidden></div>';
     }
     this.load();
   }
@@ -626,15 +863,24 @@ class Tile {
     const up = css('--up') + '99', down = css('--down') + '99';
     return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
   }
-  load() {
+  load(keepView) {
     const { sym } = this.cell;
     this.$('.sym').innerHTML = `<span>${sym}</span>${ICON.caret}`;
     const lk = this.$('.link'), g = this.cell.link || 0;
     lk.textContent = g || '';
     lk.classList.toggle('on', !!g);
     lk.style.background = g ? LINK_COLORS[g] : '';
+    const s = store(sym), msg = this.$('.msg');
+    msg.hidden = ready(s);
+    msg.textContent = s.error || `Loading ${sym}…`;
+    msg.classList.toggle('err', !!s.error);
+    if (!ready(s)) {
+      if (this.chart) { this.list = []; this.candles.setData([]); this.volume.setData([]); this.vw.setData([]); this.$('.legend').innerHTML = ''; this.watermark(true); this.paintDrawings(); }
+      else this.$('.tbl').innerHTML = '';
+      ['.last', '.c1', '.c2', '.bid', '.ask'].forEach(k => { this.$(k).textContent = k === '.last' ? '—' : ''; });
+      return;
+    }
     if (this.kind === 'chart') {
-      const s = store(sym);
       this.$('.tf').value = this.cell.tf;
       const list = bars(sym, this.cell.tf);
       const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
@@ -645,9 +891,11 @@ class Tile {
       this.volume.setData(this.volData(list));
       this.vw.setData(this.showVwap ? vwap(list) : []);
       this.chart.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } });
-      const n = list.length, fit = () => this.chart.timeScale().setVisibleLogicalRange({ from: n - 150, to: n + 4 });
-      fit(); requestAnimationFrame(() => requestAnimationFrame(fit));
-      this.setMode(null);
+      if (!keepView) {
+        const n = list.length, fit = () => this.chart.timeScale().setVisibleLogicalRange({ from: n - 150, to: n + 4 });
+        fit(); requestAnimationFrame(() => requestAnimationFrame(fit));
+        this.setMode(null);
+      }
       this.syncLines();
       this.watermark(true);
     } else {
@@ -657,25 +905,26 @@ class Tile {
     this.update();
   }
   update() {
-    const s = store(this.cell.sym), p = last(s), d = dec(p);
+    const s = store(this.cell.sym);
+    if (!ready(s)) return;
+    const p = last(s), d = dec(p);
     if (this.kind === 'chart') {
       const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
-      this.candles.update(lb);
-      this.volume.update(this.volData([lb])[0]);
+      if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); }
       const lg = this.$('.legend');
-      if (this.showVwap) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
+      if (this.showVwap && lb) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
       else lg.innerHTML = '';
       this.watermark();
       this.paintDrawings();
     } else if (this.kind === 'l2') {
       const rows = (list, cls, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
         list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
-      this.$('.tbl').innerHTML = `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
+      this.$('.tbl').innerHTML = (s.live ? '<div class="simnote">Depth simulated · top is IEX bid/ask</div>' : '') + `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
     } else {
       this.$('.tbl').innerHTML = `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
         s.prints.slice(0, 80).map(x => `<div class="r ${x.side}${x.size >= 2000 ? ' big' : ''}"><span>${x.t}</span><span>${x.price.toFixed(d)}</span><span>${x.size.toLocaleString()}</span></div>`).join('') + '</div>';
     }
-    const ch = p - s.prevClose, pct = ch / s.prevClose * 100, sign = ch >= 0 ? '+' : '', cls = ch >= 0 ? 'up' : 'down';
+    const ch = s.prevClose ? p - s.prevClose : 0, pct = s.prevClose ? ch / s.prevClose * 100 : 0, sign = ch >= 0 ? '+' : '', cls = ch >= 0 ? 'up' : 'down';
     const lastEl = this.$('.last');
     lastEl.textContent = p.toFixed(d);
     lastEl.className = 'last ' + s.dir;
@@ -1299,8 +1548,9 @@ function removeAlert(id) {
 function checkAlerts() {
   let hit = false;
   alerts.forEach(a => {
-    if (a.status !== 'active' || !stores[a.sym]) return;
+    if (a.status !== 'active' || !stores[a.sym] || !ready(stores[a.sym])) return;
     const p = last(stores[a.sym]);
+    if (!(p > 0)) return;
     if (a.dir === 'above' ? p >= a.price : p <= a.price) {
       a.status = 'triggered'; a.at = etTime.format(Date.now()); hit = true;
       toast(`<b>${esc(a.sym)}</b> ${a.dir === 'above' ? 'rose to' : 'fell to'} <b>${a.price.toFixed(dec(p))}</b> at ${a.at} ET`, true);
@@ -1398,6 +1648,8 @@ function applyColors() {
 const sheet = document.getElementById('sheet');
 function openColors() {
   closePop();
+  sheet.dataset.kind = 'colors';
+  sheet.setAttribute('aria-label', 'Colors');
   sheet.innerHTML = `<div class="zin">
     <div class="sheet-head"><h3>Colors</h3><button class="ib" id="sheetClose" aria-label="Close colors"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></div>
     <h4>Start from a theme</h4>
@@ -1411,17 +1663,90 @@ function openColors() {
   sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName] }; applyColors(); openColors(); });
   sheet.querySelector('#resetColors').onclick = () => { colors = {}; applyColors(); openColors(); };
 }
-document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden) openColors(); else sheet.hidden = true; });
+document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden || sheet.dataset.kind !== 'colors') openColors(); else sheet.hidden = true; });
+
+const CLOSE_X = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+function paintDataStatus() {
+  const el = sheet.querySelector('.status');
+  if (!el) return;
+  const text = {
+    demo: 'Using demo data. Prices are simulated.',
+    connecting: 'Connecting to Alpaca…',
+    live: 'Live. Prices and trades are streaming from Alpaca (IEX).',
+    error: feed.msg || 'Something went wrong.'
+  }[feed.state];
+  el.dataset.state = feed.state;
+  el.innerHTML = `<i></i><span>${esc(text)}</span>`;
+}
+function openData() {
+  closePop();
+  sheet.dataset.kind = 'data';
+  sheet.setAttribute('aria-label', 'Data source');
+  const live = dataCfg.mode === 'live';
+  sheet.innerHTML = `<div class="zin">
+    <div class="sheet-head"><h3>Data source</h3><button class="ib" id="sheetClose" aria-label="Close data source">${CLOSE_X}</button></div>
+    <div class="seg" role="group" aria-label="Data source">
+      <button id="dsDemo" aria-pressed="${!live}">Demo</button>
+      <button id="dsLive" aria-pressed="${live}">Live (Alpaca)</button>
+    </div>
+    <div class="status"></div>
+    <div id="liveBox" ${live ? '' : 'hidden'}>
+      <h4>Alpaca keys</h4>
+      <label class="field">Key ID<input id="dsKey" autocomplete="off" spellcheck="false" value="${esc(dataCfg.key)}"></label>
+      <label class="field">Secret key<input id="dsSecret" type="password" autocomplete="off" spellcheck="false" value="${esc(dataCfg.secret)}"></label>
+      <p>Your keys are saved only in this browser on this device. They are never put in the app's code.</p>
+      <div class="row2"><button class="btn primary" id="dsSave">Connect</button><button class="btn" id="dsForget">Forget keys</button></div>
+      <h4>What is live</h4>
+      <ul>
+        <li><b>Charts</b>: full-market candles. The free plan holds back the last 15 minutes, so that stretch is built from IEX trades and fills in as it catches up.</li>
+        <li><b>Last price, bid/ask and Time &amp; Sales</b>: real time from IEX, one exchange that carries a few percent of all trading.</li>
+        <li><b>Level II</b>: still simulated. No free source offers market depth.</li>
+        <li>Up to 30 symbols at once. US stocks and ETFs only, not OTC.</li>
+      </ul>
+      <h4>Getting keys</h4>
+      <ol>
+        <li>Sign up free at <a href="https://alpaca.markets" target="_blank" rel="noopener">alpaca.markets</a>.</li>
+        <li>In the dashboard, switch to <b>Paper</b> trading and find <b>API Keys</b>.</li>
+        <li>Press <b>Generate</b>, then copy both keys here.</li>
+      </ol>
+      <details><summary>Advanced</summary>
+        <label class="field">Data URL<input id="dsBase" placeholder="https://data.alpaca.markets" value="${esc(dataCfg.base)}"></label>
+        <label class="field">Stream URL<input id="dsStream" placeholder="wss://stream.data.alpaca.markets/v2/iex" value="${esc(dataCfg.stream)}"></label>
+      </details>
+    </div></div>`;
+  sheet.hidden = false;
+  paintDataStatus();
+  const $ = id => sheet.querySelector('#' + id);
+  $('sheetClose').onclick = () => { sheet.hidden = true; };
+  $('dsDemo').onclick = () => { applyData({ mode: 'demo' }); openData(); };
+  $('dsLive').onclick = () => {
+    $('dsDemo').setAttribute('aria-pressed', 'false'); $('dsLive').setAttribute('aria-pressed', 'true');
+    $('liveBox').hidden = false;
+    if (dataCfg.key && dataCfg.secret) { applyData({ mode: 'live' }); openData(); } else $('dsKey').focus();
+  };
+  $('dsSave').onclick = () => {
+    const key = $('dsKey').value.trim(), secret = $('dsSecret').value.trim();
+    if (!key || !secret) { setFeed('error', 'Enter both the Key ID and the Secret key.'); paintDataStatus(); return; }
+    applyData({ mode: 'live', key, secret, base: $('dsBase').value.trim(), stream: $('dsStream').value.trim() });
+    openData();
+  };
+  $('dsForget').onclick = () => { applyData({ mode: 'demo', key: '', secret: '' }); openData(); };
+}
+document.getElementById('feedBtn').addEventListener('click', () => { if (sheet.hidden || sheet.dataset.kind !== 'data') openData(); else sheet.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden = true; });
 applyColors();
 document.documentElement.style.setProperty('--scale', uiScale());
 
 /* ---------- go ---------- */
 render();
+setFeed(isLive() ? 'connecting' : 'demo');
+syncStream();
 setInterval(() => {
-  new Set([...allCells().map(c => c.sym), ...alerts.filter(a => a.status === 'active').map(a => a.sym)]).forEach(s => tick(store(s)));
+  if (isLive()) { wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); }); syncStream(); }
+  else wanted().forEach(sym => tick(store(sym)));
   tiles.forEach(t => t.update());
   checkAlerts();
 }, 700);
+setInterval(backfill, 60000);
 })();
 </script>
