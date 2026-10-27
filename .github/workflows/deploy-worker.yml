@@ -1,0 +1,65 @@
+name: Deploy Schwab helper
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['worker/**', '.github/workflows/deploy-worker.yml']
+
+concurrency: deploy-worker
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+      SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+      APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+      WRANGLER: npx --yes wrangler@4.150.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check the repository secrets
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID SCHWAB_APP_KEY SCHWAB_APP_SECRET APP_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::Missing repository secret $name (Settings > Secrets and variables > Actions)"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Find or create the sign-in store
+        run: |
+          find_id() { $WRANGLER kv namespace list 2>/dev/null | node -e '
+            let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+              const list = JSON.parse(s.slice(s.indexOf("[")));
+              const ns = list.find(n => n.title.includes("multichart-schwab-tokens"));
+              process.stdout.write(ns ? ns.id : "");
+            });'; }
+          id=$(find_id)
+          if [ -z "$id" ]; then $WRANGLER kv namespace create multichart-schwab-tokens; id=$(find_id); fi
+          if [ -z "$id" ]; then echo "::error::Could not create the KV namespace. Check that the Cloudflare API token uses the Edit Cloudflare Workers template."; exit 1; fi
+          sed -i "s/KV_ID/$id/" wrangler.toml
+
+      - name: Deploy
+        run: |
+          $WRANGLER deploy | tee deploy.log
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "### Schwab helper address" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$url\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Paste this into the app: Data source > Schwab > Helper address." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Store the Schwab keys and app password
+        run: |
+          printf '%s' "$SCHWAB_APP_KEY" | $WRANGLER secret put SCHWAB_APP_KEY
+          printf '%s' "$SCHWAB_APP_SECRET" | $WRANGLER secret put SCHWAB_APP_SECRET
+          printf '%s' "$APP_PASSWORD" | $WRANGLER secret put APP_PASSWORD

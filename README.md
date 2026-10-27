@@ -25,7 +25,25 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 Prices are **simulated demo data** until you switch on live data. Tap the **Demo data** badge next to
 the app name to open the Data source panel.
 
-**Live (Alpaca)** uses a free [Alpaca](https://alpaca.markets) paper account until the Schwab connection is ready:
+**Schwab** uses your own Schwab account through a small helper (the `worker/` folder) that runs free on
+Cloudflare Workers. The helper keeps your Schwab app keys and your sign-in, so they never sit in the web page.
+
+- **Charts**: full-market candles, including pre-market and after-hours
+- **Last price and bid/ask**: real time
+- **Level II**: real Nasdaq and NYSE order books
+- **Time & Sales**: built from Schwab's last-trade updates (Schwab offers no full tape feed, so busy stocks show fewer prints than thinkorswim)
+- Schwab asks you to sign in again every 7 days. The app reminds you a day ahead
+
+### Setting up the Schwab helper
+
+1. In Cloudflare, open **Workers & Pages** once, then create an API token from the **Edit Cloudflare Workers** template
+2. In this repository's **Settings → Secrets and variables → Actions**, add `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
+   `SCHWAB_APP_KEY` (Schwab calls it Client ID), `SCHWAB_APP_SECRET` (Client Secret) and `APP_PASSWORD` (a password you choose)
+3. The **Deploy Schwab helper** action runs whenever `worker/` changes on `main` (or run it by hand from the Actions tab).
+   Its summary shows the helper address
+4. In the app, open **Data source → Schwab**, enter the helper address and app password, then follow the sign-in steps
+
+**Alpaca** uses a free [Alpaca](https://alpaca.markets) paper account until the Schwab connection is ready:
 
 - **Charts**: full-market candles. The free plan holds back the most recent 15 minutes, so that
   stretch is built from IEX trades and is swapped for full-market candles each minute as it catches up
@@ -47,6 +65,7 @@ Open `index.html` in any browser. There is no build step. Charts use
 ## Roadmap
 
 1. Live data from Alpaca's free plan as a stand-in (done)
-2. Register a Schwab developer app (Market Data Production) and wait for approval
-3. Add a small private server that signs in to Schwab and streams live quotes, candles, Level II and Time & Sales to the app
-4. Save layouts across devices, install to the home screen, then package for the App Store and Google Play
+2. Schwab developer app approved (done)
+3. Schwab helper and live Schwab data (built, first real test pending)
+4. Email and text alerts sent from the helper
+5. Save layouts across devices, install to the home screen, then package for the App Store and Google Play

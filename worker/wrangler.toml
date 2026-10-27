@@ -1,0 +1,9 @@
+# The deploy workflow (.github/workflows/deploy-worker.yml) fills in the KV id.
+name = "multichart-schwab"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "KV_ID"
