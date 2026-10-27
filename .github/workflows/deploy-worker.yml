@@ -35,17 +35,29 @@ jobs:
           done
           exit $missing
 
+      - name: Tidy the account ID
+        run: echo "CLOUDFLARE_ACCOUNT_ID=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')" >> "$GITHUB_ENV"
+
       - name: Find or create the sign-in store
         run: |
-          find_id() { $WRANGLER kv namespace list 2>/dev/null | node -e '
-            let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
-              const list = JSON.parse(s.slice(s.indexOf("[")));
-              const ns = list.find(n => n.title.includes("multichart-schwab-tokens"));
-              process.stdout.write(ns ? ns.id : "");
-            });'; }
-          id=$(find_id)
-          if [ -z "$id" ]; then $WRANGLER kv namespace create multichart-schwab-tokens; id=$(find_id); fi
-          if [ -z "$id" ]; then echo "::error::Could not create the KV namespace. Check that the Cloudflare API token uses the Edit Cloudflare Workers template."; exit 1; fi
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          check() {
+            if [ "$(jq -r .success <<< "$1")" != "true" ]; then
+              echo "::error::Cloudflare said: $(jq -r '[.errors[]? | "\(.code) \(.message)"] | join("; ")' <<< "$1" 2>/dev/null || echo "$1" | head -c 300)"
+              echo "::error::Check that CLOUDFLARE_ACCOUNT_ID is the Account ID and that the API token was made from the Edit Cloudflare Workers template."
+              exit 1
+            fi
+          }
+          list=$(curl -sS -H "$auth" "$api?per_page=100")
+          check "$list"
+          id=$(jq -r '.result[] | select(.title == "multichart-schwab-tokens") | .id' <<< "$list" | head -1)
+          if [ -z "$id" ]; then
+            made=$(curl -sS -X POST -H "$auth" -H "Content-Type: application/json" --data '{"title":"multichart-schwab-tokens"}' "$api")
+            check "$made"
+            id=$(jq -r .result.id <<< "$made")
+          fi
+          echo "Sign-in store: $id"
           sed -i "s/KV_ID/$id/" wrangler.toml
 
       - name: Deploy
