@@ -42,6 +42,9 @@ Cloudflare Workers. The helper keeps your Schwab app keys and your sign-in, so t
 3. The **Deploy Schwab helper** action runs whenever `worker/` changes on `main` (or run it by hand from the Actions tab).
    Its summary shows the helper address
 4. In the app, open **Data source → Schwab**, enter the helper address and app password, then follow the sign-in steps
+5. On other devices the app already knows the helper address and asks only for the app password. Or use
+   **Copy setup link** under Data source → Schwab: opening that link on another device turns live data on there
+   straight away (it carries the app password, so only send it to yourself)
 
 **Alpaca** uses a free [Alpaca](https://alpaca.markets) paper account until the Schwab connection is ready:
 
