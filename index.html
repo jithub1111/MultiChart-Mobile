@@ -174,7 +174,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @container (max-width: 470px) { .ba { display: none; } }
 @container (max-width: 330px) { .chg { display: none; } }
-@container (max-width: 230px) { .last { font-size: 13px; } .link { display: none; } }
+@container (max-width: 230px) { .last { font-size: 13px; } .tile:not(.wtile) .link { display: none; } }
 .tf {
   margin-left: auto; height: 24px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
   font-family: var(--num); font-size: 12px; font-weight: 600; padding: 0 2px;
@@ -308,8 +308,44 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
   .zoomctl button { padding: 0 8px; } .zoomctl .zlabel { min-width: 38px; font-size: 10px; }
 }
 
+/* Watchlist panel */
+.wl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wr {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) repeat(4, minmax(0, 1fr)); align-items: center; gap: 6px;
+  height: 24px; padding: 0 6px; white-space: nowrap; border-bottom: 1px solid var(--grid); cursor: pointer;
+}
+.wr > * { overflow: hidden; text-overflow: ellipsis; }
+.wr .wp, .wr .wc, .wr .wpc, .wr .wv { text-align: right; }
+.wr .wn, .wr .grip, .wr .wx { display: none; }
+.wr .ws { font-weight: 600; }
+.wr .wn { font-family: var(--ui); font-size: 11px; color: var(--muted); }
+.wr .up { color: var(--up); } .wr .down { color: var(--down); }
+.wr.on { background: var(--hover); box-shadow: inset 3px 0 0 var(--wsel, var(--accent)); }
+.wr.bad .ws { color: var(--muted); text-decoration: line-through; }
+.wr.bad .wp { color: var(--muted); font-family: var(--ui); font-size: 11px; }
+.wr.wh { position: sticky; top: 0; z-index: 1; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: 11px; font-weight: 600; border-bottom-color: var(--line); }
+.wh [data-k] { user-select: none; -webkit-user-select: none; }
+.wh [data-dir="asc"]::after { content: " \25B2"; font-size: 8px; } .wh [data-dir="desc"]::after { content: " \25BC"; font-size: 8px; }
+.wedit { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 6px; background: var(--head); border-bottom: 1px solid var(--line); font-family: var(--ui); font-size: 11.5px; color: var(--muted); }
+.wedit .btn { height: 24px; padding: 0 10px; font-size: 12px; }
+.wl.editing .wr { grid-template-columns: 22px minmax(0, .8fr) minmax(0, 1.6fr) 26px; cursor: default; }
+.wl.editing .wr .wp, .wl.editing .wr .wc, .wl.editing .wr .wpc, .wl.editing .wr .wv { display: none; }
+.wl.editing .wr .wn, .wl.editing .wr .grip, .wl.editing .wr .wx { display: block; }
+.wr .grip { color: var(--muted); touch-action: none; cursor: grab; height: 100%; place-items: center; }
+.wl.editing .wr .grip { display: grid; }
+.grip svg { width: 12px; height: 12px; }
+.wr .wx { border: 0; background: none; color: var(--down); font-size: 13px; padding: 0; height: 100%; }
+.wr.drag { background: var(--head); box-shadow: 0 2px 10px rgba(0, 0, 0, .5); position: relative; z-index: 2; }
+.wempty { margin: 0; padding: 14px 12px; color: var(--muted); font-family: var(--ui); font-size: 12.5px; line-height: 1.5; }
+.wempty .btn { margin-top: 8px; }
+.picks button:disabled { opacity: .35; }
+.sym > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (min-width: 560px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, .9fr) minmax(0, 1.7fr) repeat(4, minmax(0, 1fr)); } .wl:not(.editing) .wr .wn { display: block; } }
+@container (max-width: 330px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(0, 1fr)); } .wr .wv { display: none; } }
+@container (max-width: 240px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, 1.1fr) repeat(2, minmax(0, 1fr)); } .wr .wc { display: none; } }
+
 /* app zoom: scale the interface text and controls; chart canvases stay at native size and scale their own text */
-.bar, .tabs, .th, .tbl, .fund, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
+.bar, .tabs, .th, .tbl, .fund, .wl, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
 
 /* drawings, alerts, saved layouts */
 .draw-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; width: 100%; height: 100%; }
@@ -852,11 +888,12 @@ async function backfill() {
 }
 
 let ws = null, wsSyms = new Set(), wsTries = 0, wsTimer = 0;
-const wanted = () => new Set([...allCells().map(c => c.sym), ...alerts.filter(a => a.status === 'active').map(a => a.sym)]);
+// Symbols that need full chart data. Watchlist rows only need prices (see wquote).
+const wanted = () => new Set([...allCells().filter(c => c.kind !== 'watch').map(c => c.sym), ...alerts.filter(a => a.status === 'active').map(a => a.sym)]);
 function closeStream() {
   clearTimeout(wsTimer);
   if (ws) { ws.onclose = null; ws.close(); }
-  ws = null; wsSyms = new Set(); sKeys = '';
+  ws = null; wsSyms = new Set(); sKeys = {};
 }
 function syncStream() {
   if (!isLive()) return closeStream();
@@ -939,16 +976,20 @@ async function loadSchwab(s) {
   } catch (e) {}
 }
 
-let sInfo = null, sReq = 1, sKeys = '', schwabUntil = 0;
-const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,35'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
+let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
+const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,12,18,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
 function sSend(sock, service, command, parameters) {
   sock.send(JSON.stringify({ requests: [{ requestid: String(sReq++), service, command, SchwabClientCustomerId: sInfo.schwabClientCustomerId, SchwabClientCorrelId: sInfo.schwabClientCorrelId, parameters }] }));
 }
 function syncSchwab() {
-  const keys = [...wanted()].filter(x => stores[x] && stores[x].ready).sort().join(',');
-  if (keys === sKeys) return;
-  S_SUBS.forEach(([svc, fields]) => { if (keys) sSend(ws, svc, 'SUBS', { keys, fields }); else sSend(ws, svc, 'UNSUBS', { keys: sKeys }); });
-  sKeys = keys;
+  const charts = [...wanted()].filter(x => stores[x] && stores[x].ready), watch = [...watchSyms()].filter(x => !(quotes.get(x) || {}).missing);
+  S_SUBS.forEach(([svc, fields]) => {
+    // Watchlist tickers only need prices (Level I); charts also get minute bars and the book.
+    const keys = [...new Set(svc === 'LEVELONE_EQUITIES' ? [...charts, ...watch] : charts)].sort().join(',');
+    if (keys === (sKeys[svc] || '')) return;
+    if (keys) sSend(ws, svc, 'SUBS', { keys, fields }); else sSend(ws, svc, 'UNSUBS', { keys: sKeys[svc] });
+    sKeys[svc] = keys;
+  });
 }
 async function openSchwab() {
   const hold = { schwab: true, close() {} };
@@ -980,7 +1021,7 @@ async function openSchwab() {
       const code = r.content && r.content.code;
       if (r.service === 'ADMIN' && r.command === 'LOGIN') {
         if (code === 0) {
-          sock.authed = true; wsTries = 0; sKeys = '';
+          sock.authed = true; wsTries = 0; sKeys = {};
           const bad = Object.values(stores).find(x => x.error && x.errCode !== 'empty');
           setFeed(bad ? 'error' : 'live', bad ? bad.error : '');
           syncStream();
@@ -998,7 +1039,7 @@ async function openSchwab() {
   };
   sock.onclose = () => {
     if (ws !== sock) return;
-    ws = null; sKeys = '';
+    ws = null; sKeys = {};
     if (!isLive() || sock.fatal) return;
     if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Schwab. Reconnecting.' : 'Could not open the live connection to Schwab. Retrying.');
     wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
@@ -1006,6 +1047,7 @@ async function openSchwab() {
 }
 function onSchwabData(d) {
   (d.content || []).forEach(c => {
+    if (d.service === 'LEVELONE_EQUITIES' && quotes.has(c.key)) setQuote(quotes.get(c.key), { bid: c[1], ask: c[2], last: c[3], vol: c[8], close: c[12], chg: c[18], pct: c[42] });
     const s = stores[c.key];
     if (!s || !s.live || !s.ready) return;
     if (d.service === 'LEVELONE_EQUITIES') {
@@ -1046,6 +1088,7 @@ function applyData(cfg) {
   closeStream();
   wsTries = 0;
   stores = {};
+  quotes.clear(); quotesAt = 0;
   setFeed(isLive() ? 'connecting' : 'demo');
   tiles.forEach(t => t.load());
   syncStream();
@@ -1056,9 +1099,11 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const ICON = {
   caret: '<svg viewBox="0 0 10 10" fill="currentColor"><path d="M1.5 3h7L5 7.5z"/></svg>',
   more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>',
+  plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>',
+  grip: '<svg viewBox="0 0 12 12" fill="currentColor"><circle cx="4" cy="2.5" r="1.1"/><circle cx="8" cy="2.5" r="1.1"/><circle cx="4" cy="6" r="1.1"/><circle cx="8" cy="6" r="1.1"/><circle cx="4" cy="9.5" r="1.1"/><circle cx="8" cy="9.5" r="1.1"/></svg>',
   draw: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 13.5l11-9"/><circle cx="2.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="4.5" r="1.3" fill="currentColor"/><path d="M1.5 8h4M10.5 12h4" stroke-dasharray="1.5 1.5"/></svg>'
 };
-const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S', fund: 'Fundamentals' };
+const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S', fund: 'Fundamentals', watch: 'Watchlist' };
 function chartColors() {
   const muted = css('--muted'), line = css('--line'), grid = css('--grid');
   return {
@@ -1292,6 +1337,156 @@ function filingsView(c, sym, filter) {
   return chips + (rows || '<p class="fnote">No recent filings of this kind.</p>') + `<p class="fnote">The latest filings from the SEC's EDGAR site. Tap one to open it.</p>`;
 }
 
+/* ---------- Watchlist panel ---------- */
+// Named lists of tickers, shared by every Watchlist panel (each panel shows one of them).
+// Tapping a ticker sends it to the panels in the watchlist's link group.
+const WL_KEY = 'multichart-watchlists-v1';
+let wlists = [];
+try { const j = JSON.parse(localStorage.getItem(WL_KEY)); if (j && Array.isArray(j.lists)) wlists = j.lists.filter(l => l && l.id && Array.isArray(l.syms)); } catch (e) {}
+const saveLists = () => { try { localStorage.setItem(WL_KEY, JSON.stringify({ lists: wlists })); } catch (e) {} };
+const newListId = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+function listFor(cell) {
+  let l = wlists.find(x => x.id === cell.wl);
+  if (!l) {
+    // The first list starts with the symbols on your charts.
+    if (!wlists.length) { wlists.push({ id: newListId(), name: 'My list', syms: [...new Set(allCells().filter(c => c.kind === 'chart').map(c => c.sym))] }); saveLists(); }
+    l = wlists[0];
+    cell.wl = l.id;
+  }
+  return l;
+}
+// Where "Add to watchlist" on another panel puts a ticker: the list showing in this tab, else the first one.
+function activeList() {
+  const t = [...tiles.values()].find(x => x.kind === 'watch');
+  return listFor(t ? t.cell : {});
+}
+const parseSyms = text => [...new Set(String(text).toUpperCase().split(/[\s,;]+/).map(x => x.replace(/[^A-Z0-9.\/]/g, '').slice(0, 12)).filter(Boolean))];
+const paintLists = () => tiles.forEach(t => { if (t.kind === 'watch') { t.load(); t.paintEdit(); } });
+function addToList(l, syms) {
+  const fresh = syms.filter(s => !l.syms.includes(s));
+  l.syms.push(...fresh);
+  saveLists(); paintLists(); syncStream();
+  return fresh;
+}
+function removeFromList(l, sym) {
+  l.syms = l.syms.filter(s => s !== sym);
+  saveLists(); paintLists(); syncStream();
+}
+function pickTicker(t, sym) {
+  if (!t.cell.link) toast('This watchlist isn\'t linked to a chart yet. Tap its link square (next to the list name) and pick the color of the charts it should change.', true);
+  setSymbol(t, sym);
+}
+
+// Prices for the rows. Demo mode reads the simulated market. Live mode keeps a light quote per ticker
+// instead of loading its chart history: one batch request, then Schwab's live Level I updates
+// (with Alpaca, a fresh batch every 15 seconds).
+const quotes = new Map();
+let quotesAt = 0, quotesBusy = false, quoteTimer = 0;
+function watchSyms() {
+  const out = new Set();
+  tiles.forEach(t => { if (t.kind === 'watch') listFor(t.cell).syms.forEach(s => out.add(s)); });
+  return out;
+}
+function setQuote(q, v) {
+  const num = x => typeof x === 'number' && isFinite(x);
+  if (num(v.last) && v.last > 0 && v.last !== q.last) { if (q.last) q.dir = v.last > q.last ? 'up' : 'down'; q.last = v.last; }
+  if (num(v.close) && v.close > 0) q.close = v.close;
+  ['bid', 'ask', 'vol', 'chg', 'pct'].forEach(k => { if (num(v[k])) q[k] = v[k]; });
+  q.missing = false;
+}
+function wquote(sym) {
+  if (!isLive()) {
+    const s = store(sym), d = s.daily[s.daily.length - 1];
+    return { last: last(s), close: s.prevClose, vol: d && d.volume };
+  }
+  let q = quotes.get(sym);
+  if (!q) { quotes.set(sym, q = { sym }); queueQuotes(); }
+  return q;
+}
+function queueQuotes() { clearTimeout(quoteTimer); quoteTimer = setTimeout(refreshQuotes, 250); }
+async function refreshQuotes() {
+  if (!isLive() || quotesBusy) return;
+  const syms = [...watchSyms()], mode = dataCfg.mode;
+  if (!syms.length) return;
+  quotesBusy = true; quotesAt = Date.now();
+  try {
+    const list = syms.map(encodeURIComponent).join(',');
+    const j = mode === 'schwab' ? await helper(`/quotes?symbols=${list}&fields=quote,reference`) : await api('/v2/stocks/snapshots', { symbols: syms.join(','), feed: 'iex' });
+    if (dataCfg.mode !== mode) return;
+    syms.forEach(sym => {
+      const q = quotes.get(sym) || { sym }, r = j[sym];
+      quotes.set(sym, q);
+      if (r && r.quote) {
+        const x = r.quote;
+        setQuote(q, { last: x.lastPrice, bid: x.bidPrice, ask: x.askPrice, close: x.closePrice, vol: x.totalVolume, chg: x.netChange, pct: x.netPercentChange });
+        if (r.reference && r.reference.description) q.name = r.reference.description;
+      } else if (r && (r.latestTrade || r.dailyBar)) {
+        setQuote(q, { last: r.latestTrade && r.latestTrade.p, bid: r.latestQuote && r.latestQuote.bp, ask: r.latestQuote && r.latestQuote.ap, close: r.prevDailyBar && r.prevDailyBar.c, vol: r.dailyBar && r.dailyBar.v });
+      } else if (!q.last) q.missing = true;
+    });
+  } catch (e) {
+    // The data button already shows connection problems; the next round tries again.
+  } finally { quotesBusy = false; }
+}
+
+// The panel's popovers: pick or manage lists, and add tickers.
+function listPop(anchor, t) {
+  const cur = listFor(t.cell), plain = 'style="text-transform:none;font-family:var(--ui);font-weight:500"';
+  openPop(anchor, `
+    <h4>Watchlists</h4>
+    <div class="menu">${wlists.map(l => `<button data-l="${l.id}" aria-current="${l === cur}"><span>${esc(l.name)} <small>${l.syms.length} ticker${l.syms.length === 1 ? '' : 's'}</small></span></button>`).join('')}</div>
+    <form class="symform" id="wlNew"><input maxlength="30" placeholder="New list name" aria-label="New list name" ${plain}><button class="btn primary" type="submit">Create</button></form>
+    <hr>
+    <form class="symform" id="wlRename"><input maxlength="30" value="${esc(cur.name)}" aria-label="List name" ${plain}><button class="btn" type="submit">Rename</button></form>
+    <div class="menu"><button data-a="del" class="danger" ${wlists.length < 2 ? 'disabled' : ''}><span>Delete “${esc(cur.name)}”</span></button></div>`, p => {
+    const show = l => { t.cell.wl = l.id; t.wediting = false; save(); t.load(); t.paintEdit(); syncStream(); };
+    p.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { closePop(); show(wlists.find(l => l.id === b.dataset.l)); });
+    p.querySelector('#wlNew').onsubmit = e => {
+      e.preventDefault();
+      const name = e.target.querySelector('input').value.trim();
+      if (!name) return e.target.querySelector('input').focus();
+      const l = { id: newListId(), name, syms: [] };
+      wlists.push(l); saveLists(); closePop(); show(l);
+      wlAddPop(t.$('.wadd'), t);
+    };
+    p.querySelector('#wlRename').onsubmit = e => {
+      e.preventDefault();
+      const name = e.target.querySelector('input').value.trim();
+      if (!name) return e.target.querySelector('input').focus();
+      cur.name = name; saveLists(); closePop(); paintLists();
+    };
+    p.querySelector('[data-a=del]').onclick = e => {
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = '1'; b.querySelector('span').textContent = `Tap again to delete “${cur.name}”`; return; }
+      wlists = wlists.filter(l => l !== cur); saveLists(); closePop(); paintLists(); syncStream();
+    };
+  });
+}
+function wlAddPop(anchor, t) {
+  const l = listFor(t.cell);
+  openPop(anchor, `
+    <h4>Add to ${esc(l.name)}</h4>
+    <form class="symform"><input id="wlInput" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="200" placeholder="AAPL TSLA" aria-label="Tickers to add"><button class="btn primary" type="submit">Add</button></form>
+    <div class="picks">${PICKS.map(s => `<button data-s="${s}" ${l.syms.includes(s) ? 'disabled' : ''}>${s}</button>`).join('')}</div>
+    <p class="note">Type one ticker or several, separated by spaces or commas.</p>`, p => {
+    p.querySelector('form').onsubmit = e => {
+      e.preventDefault();
+      const syms = parseSyms(p.querySelector('input').value);
+      if (!syms.length) return p.querySelector('input').focus();
+      const fresh = addToList(l, syms), dup = syms.filter(s => !fresh.includes(s));
+      closePop();
+      if (dup.length) toast(`${esc(dup.join(', '))} ${dup.length === 1 ? 'is' : 'are'} already on ${esc(l.name)}.`);
+    };
+    p.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { addToList(l, [b.dataset.s]); b.disabled = true; });
+    if (matchMedia('(pointer: fine)').matches) p.querySelector('input').focus();
+  });
+}
+const WCOLS = [['sym', 'Symbol', 'ws'], ['name', 'Name', 'wn'], ['last', 'Last', 'wp'], ['chg', 'Chg', 'wc'], ['pct', '%Chg', 'wpc'], ['vol', 'Volume', 'wv']];
+function flash(el, up) {
+  if (!el.animate) return;
+  el.animate([{ background: css(up ? '--up' : '--down') + '50' }, { background: 'transparent' }], { duration: 500, easing: 'ease-out' });
+}
+
 function bookHtml(s, d) {
   const rows = (list, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
     list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
@@ -1307,18 +1502,19 @@ class Tile {
     this.cell = cell;
     this.kind = cell.kind;
     const el = this.el = document.createElement('section');
-    el.className = 'tile';
-    const chart = this.kind === 'chart';
+    const chart = this.kind === 'chart', watch = this.kind === 'watch';
+    el.className = watch ? 'tile wtile' : 'tile';
     el.innerHTML = `
       <div class="th">
-        <button class="sym" aria-label="Change symbol"></button>
+        <button class="sym" aria-label="${watch ? 'Choose watchlist' : 'Change symbol'}"></button>
         <button class="link" aria-label="Link group"></button>
+        ${watch ? `<span class="spacer"></span><button class="ib wadd" aria-label="Add tickers">${ICON.plus}</button>` : `
         ${chart ? '' : '<span class="name"></span>'}
         <span class="last"></span>
         <span class="stack chg"><span class="c1"></span><span class="c2"></span></span>
         <span class="stack ba"><span>B: <b class="bid"></b></span><span>A: <b class="ask"></b></span></span>
         ${chart ? `<select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
-        ${chart ? `<button class="ib drw" aria-label="Draw on chart">${ICON.draw}</button>` : ''}
+        ${chart ? `<button class="ib drw" aria-label="Draw on chart">${ICON.draw}</button>` : ''}`}
         <button class="ib more" aria-label="Panel options">${ICON.more}</button>
       </div>
       <div class="body"></div>
@@ -1330,7 +1526,7 @@ class Tile {
     el.querySelectorAll('.side-add').forEach(b => b.addEventListener('click', () => addPop(b, this, b.dataset.side)));
     this.$('.edit [data-a=type]').addEventListener('click', e => typePop(e.currentTarget, this));
     this.$('.edit [data-a=del]').addEventListener('click', () => removePanel(this.cell.id));
-    this.$('.sym').addEventListener('click', e => symbolPop(e.currentTarget, this));
+    this.$('.sym').addEventListener('click', e => (watch ? listPop : symbolPop)(e.currentTarget, this));
     this.$('.link').addEventListener('click', e => linkPop(e.currentTarget, this));
     this.$('.more').addEventListener('click', e => tileMenu(e.currentTarget, this));
     if (chart) {
@@ -1444,6 +1640,18 @@ class Tile {
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
+    } else if (watch) {
+      this.$('.body').innerHTML = '<div class="wl"></div>';
+      const wl = this.$('.wl');
+      this.$('.wadd').addEventListener('click', e => wlAddPop(e.currentTarget, this));
+      wl.addEventListener('click', e => {
+        const act = e.target.closest('[data-a]'), k = e.target.closest('[data-k]'), x = e.target.closest('.wx'), row = e.target.closest('.wr[data-s]');
+        if (act) { if (act.dataset.a === 'done') { this.wediting = false; this.load(); } else wlAddPop(this.$('.wadd'), this); }
+        else if (k) this.sortBy(k.dataset.k);
+        else if (x) removeFromList(listFor(this.cell), row.dataset.s);
+        else if (row && !this.wediting) pickTicker(this, row.dataset.s);
+      });
+      wl.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) this.dragRow(e, g); });
     } else if (this.kind === 'fund') {
       this.$('.body').innerHTML = `<div class="fund"><nav class="ftabs">${Object.entries(FUND_TABS).map(([k, l]) => `<button data-t="${k}"><span class="long">${l}</span><span class="short">${FUND_SHORT[k]}</span></button>`).join('')}</nav><div class="fbody"></div></div><div class="msg" hidden></div>`;
       this.$('.ftabs').addEventListener('click', e => {
@@ -1462,6 +1670,95 @@ class Tile {
     this.load();
   }
   get intraday() { return typeof TF[this.cell.tf] === 'number'; }
+  // Watchlist rows are built when the list changes; updateWatch() then fills in prices in place,
+  // so a tap never lands on a row that was just replaced.
+  paintWatch() {
+    const l = listFor(this.cell), ed = !!this.wediting, wl = this.$('.wl'), sort = ed ? '' : this.cell.wsort || '';
+    const key = [l.id, l.syms.join(), ed, sort].join('|');
+    if (key !== this.wKey) {
+      const [sk, sd] = sort.split(':'), top = wl.scrollTop;
+      const head = ed ? '<div class="wedit"><span>Drag the dots to reorder. ✕ removes.</span><button class="btn" data-a="done">Done</button></div>'
+        : `<div class="wr wh">${WCOLS.map(([k, label, c]) => `<span class="${c}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}>${label}</span>`).join('')}</div>`;
+      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${WCOLS.map(([, , c]) => `<span class="${c}">${c === 'ws' ? esc(s) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
+      wl.classList.toggle('editing', ed);
+      wl.innerHTML = head + (l.syms.length ? `<div class="wrows">${rows}</div>` : `<p class="wempty">${esc(l.name)} is empty. Add the tickers you want to keep an eye on, then tap one to open it on the linked charts.<br><button class="btn primary" data-a="add">Add tickers</button></p>`);
+      wl.scrollTop = top;
+      this.wrows = new Map([...wl.querySelectorAll('.wr[data-s]')].map(el => [el.dataset.s, { el, cells: Object.fromEntries(WCOLS.map(([, , c]) => [c, el.querySelector('.' + c)])), shown: {} }]));
+      this.wOrder = '';
+      this.wKey = key;
+    }
+    const g = this.cell.link;
+    wl.style.setProperty('--wsel', g ? LINK_COLORS[g] : css('--accent'));
+    this.updateWatch();
+  }
+  updateWatch() {
+    if (!this.wrows) return;
+    const vals = [];
+    for (const [sym, r] of this.wrows) {
+      const q = wquote(sym), p = q.last, d = p ? dec(p) : 2;
+      const chg = p && q.close ? p - q.close : p ? q.chg : null, pct = p && q.close ? chg / q.close * 100 : p ? q.pct : null;
+      const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : '';
+      const txt = {
+        wn: q.name || NAMES[sym] || '',
+        wp: q.missing ? 'not found' : p ? p.toFixed(d) : '—',
+        wc: chg == null ? '' : (chg > 0 ? '+' : '') + chg.toFixed(d),
+        wpc: pct == null ? '' : (pct > 0 ? '+' : '') + pct.toFixed(2) + '%',
+        wv: fBig(q.vol) || ''
+      };
+      for (const k in txt) if (r.shown[k] !== txt[k]) { r.cells[k].textContent = txt[k]; r.shown[k] = txt[k]; }
+      if (r.cls !== cls) { r.cells.wc.className = 'wc ' + cls; r.cells.wpc.className = 'wpc ' + cls; r.cls = cls; }
+      if (p && r.p && p !== r.p) flash(r.cells.wp, p > r.p);
+      r.p = p;
+      r.el.classList.toggle('on', sym === this.cell.sym);
+      r.el.classList.toggle('bad', !!q.missing);
+      vals.push({ sym, name: txt.wn || sym, last: p || null, chg, pct, vol: q.vol || null });
+    }
+    // Sorted lists keep re-sorting as prices move (not while you're dragging a row).
+    const [k, dir] = (this.wediting ? '' : this.cell.wsort || '').split(':');
+    if (k) {
+      const m = dir === 'asc' ? 1 : -1;
+      vals.sort((a, b) => k === 'sym' || k === 'name' ? m * a[k].localeCompare(b[k])
+        : a[k] == null ? (b[k] == null ? 0 : 1) : b[k] == null ? -1 : m * (a[k] - b[k]) || a.sym.localeCompare(b.sym));
+    }
+    const order = vals.map(v => v.sym).join();
+    if (order !== this.wOrder && !this.wdrag) {
+      const box = this.$('.wrows');
+      if (box) vals.forEach(v => box.appendChild(this.wrows.get(v.sym).el));
+      this.wOrder = order;
+    }
+  }
+  // Tapping a column heading sorts by it; tapping again flips the order, and a third tap goes back to your own order.
+  sortBy(k) {
+    const [ck, cd] = (this.cell.wsort || '').split(':'), first = k === 'sym' || k === 'name' ? 'asc' : 'desc';
+    this.cell.wsort = ck !== k ? k + ':' + first : cd === first ? k + ':' + (first === 'asc' ? 'desc' : 'asc') : '';
+    save(); this.load();
+  }
+  // Drag a row by its dots. The neighbours move around it, so the finger keeps hold of the row.
+  dragRow(e, grip) {
+    e.preventDefault();
+    const row = grip.closest('.wr'), box = row.parentElement, wl = this.$('.wl');
+    try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+    row.classList.add('drag');
+    this.wdrag = true;
+    const mid = el => { const b = el.getBoundingClientRect(); return b.top + b.height / 2; };
+    const move = ev => {
+      const y = ev.clientY;
+      let n;
+      while ((n = row.nextElementSibling) && y > mid(n)) box.insertBefore(n, row);
+      while ((n = row.previousElementSibling) && y < mid(n)) row.after(n);
+      const b = wl.getBoundingClientRect();
+      if (y < b.top + 30) wl.scrollTop -= 10; else if (y > b.bottom - 20) wl.scrollTop += 10;
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+      row.classList.remove('drag');
+      this.wdrag = false;
+      const l = listFor(this.cell);
+      l.syms = [...box.children].map(r => r.dataset.s);
+      saveLists(); paintLists();
+    };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+  }
   paintFund() {
     const sym = this.cell.sym, tab = FUND_TABS[this.cell.ftab] ? this.cell.ftab : 'news', body = this.$('.fbody');
     this.$('.ftabs').querySelectorAll('[data-t]').forEach(b => b.setAttribute('aria-current', String(b.dataset.t === tab)));
@@ -1517,12 +1814,10 @@ class Tile {
     return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
   }
   load(keepView) {
-    const { sym } = this.cell;
-    this.$('.sym').innerHTML = `<span>${sym}</span>${ICON.caret}`;
-    const lk = this.$('.link'), g = this.cell.link || 0;
-    lk.textContent = g || '';
-    lk.classList.toggle('on', !!g);
-    lk.style.background = g ? LINK_COLORS[g] : '';
+    const { sym } = this.cell, watch = this.kind === 'watch';
+    this.$('.sym').innerHTML = `<span>${watch ? esc(listFor(this.cell).name) : sym}</span>${ICON.caret}`;
+    this.paintLink();
+    if (watch) return this.paintWatch();
     const s = store(sym), msg = this.$('.msg');
     if (this.kind === 'fund') this.paintFund();
     msg.hidden = ready(s) || this.kind === 'fund';
@@ -1560,6 +1855,7 @@ class Tile {
     this.update();
   }
   update() {
+    if (this.kind === 'watch') return this.updateWatch();
     const s = store(this.cell.sym);
     if (!ready(s)) return;
     const p = last(s), d = dec(p);
@@ -1702,8 +1998,14 @@ class Tile {
     if (!best) return;
     if (best.kind === 'drawing') removeDrawing(sym, best.id); else removeAlert(best.id);
   }
+  paintLink() {
+    const lk = this.$('.link'), g = this.cell.link || 0;
+    lk.textContent = g || '';
+    lk.classList.toggle('on', !!g);
+    lk.style.background = g ? LINK_COLORS[g] : '';
+  }
   paintEdit() {
-    this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.cell.sym}${this.kind === 'chart' ? ' · ' + this.cell.tf : ''}</small>`;
+    this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.kind === 'watch' ? esc(listFor(this.cell).name) : this.cell.sym + (this.kind === 'chart' ? ' · ' + this.cell.tf : '')}</small>`;
     this.$('.edit [data-a=del]').disabled = allCells().length < 2;
   }
   destroy() { if (this.chart) this.chart.remove(); if (this.vchart) this.vchart.remove(); }
@@ -1853,7 +2155,7 @@ function render() {
   const top = maxCell ? place(maxCell) : build(state.root);
   if (top) { top.style.flex = '1 1 0'; grid.append(top); }
   for (const [id, t] of tiles) if (!live.has(id)) { t.destroy(); tiles.delete(id); }
-  tiles.forEach(t => t.paintEdit());
+  tiles.forEach(t => { t.paintEdit(); t.paintLink(); });  // adding a panel can give its neighbour a link group
   grid.classList.toggle('editing', editing);
   const eb = document.getElementById('editBtn');
   eb.setAttribute('aria-pressed', String(editing));
@@ -1902,19 +2204,22 @@ function setSymbol(t, sym) {
   save();
 }
 
-// Add a panel on one side of an existing panel. Level II and Time & Sales link to the panel they sit next to.
-function insertPanel(target, side, kind) {
+// Add a panel on one side of an existing panel. Panels other than charts link to the panel they sit next to.
+// With `whole`, the panel goes down the whole side of the layout and links to its first chart.
+function insertPanel(target, side, kind, whole) {
   maxed = null;
   if (kind !== 'chart') state.chartsOnly = false;
   const charts = allCells().filter(c => c.kind === 'chart');
   const cell = kind === 'chart' ? newCell('chart', DEFAULT_CHARTS[charts.length % DEFAULT_CHARTS.length]) : newCell(kind);
+  if (whole) target = state.root;
   if (kind !== 'chart') {
-    if (!target.link) target.link = freeLink();
-    cell.link = target.link; cell.sym = target.sym;
+    const lead = isLeaf(target) ? target : charts[0] || leaves(target)[0];
+    if (!lead.link) lead.link = freeLink();
+    cell.link = lead.link; cell.sym = lead.sym;
   }
   const dir = side === 'left' || side === 'right' ? 'h' : 'v';
   const before = side === 'left' || side === 'top';
-  const share = kind === 'l2' || kind === 'ts' ? 0.6 : 1;
+  const share = whole ? 0.35 : kind === 'l2' || kind === 'ts' || kind === 'watch' ? 0.6 : 1;
   const p = parentOf(target);
   if (p && p.dir === dir) {
     const total = target.size;
@@ -1962,6 +2267,8 @@ function tileMenu(anchor, t) {
   openPop(anchor, `
     <div class="menu">
       ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
+      ${t.kind === 'watch' ? '<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button>'
+        : `<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
       <hr>
       ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
@@ -1970,6 +2277,13 @@ function tileMenu(anchor, t) {
     </div>`, p => {
     const v = p.querySelector('[data-a=vwap]');
     if (v) v.onclick = () => { t.cell.vwap = !t.cell.vwap; t.load(); save(); closePop(); };
+    const we = p.querySelector('[data-a=wedit]'), wa = p.querySelector('[data-a=wladd]');
+    if (we) we.onclick = () => { closePop(); t.wediting = true; t.load(); };
+    if (wa) wa.onclick = () => {
+      closePop();
+      const l = activeList(), sym = t.cell.sym, seen = [...tiles.values()].some(x => x.kind === 'watch');
+      toast(addToList(l, [sym]).length ? `Added <b>${esc(sym)}</b> to ${esc(l.name)}.${seen ? '' : ' Add a Watchlist panel from <b>Layout</b> to see it.'}` : `<b>${esc(sym)}</b> is already on ${esc(l.name)}.`);
+    };
     p.querySelector('[data-a=max]').onclick = () => { closePop(); toggleMax(t); };
     p.querySelector('[data-a=del]').onclick = () => { closePop(); removePanel(t.cell.id); };
     p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
@@ -1978,10 +2292,12 @@ function tileMenu(anchor, t) {
 
 function addPop(anchor, t, side) {
   const where = side === 'top' ? 'above' : side === 'bottom' ? 'below' : 'to the ' + side;
+  const edge = side === 'left' || side === 'right';
   openPop(anchor, `
     <h4>Add ${where}</h4>
-    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}"><span>${label}</span></button>`).join('')}</div>`, p => {
-    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); insertPanel(t.cell, side, b.dataset.k); });
+    <div class="menu">${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}"><span>${label}</span></button>`).join('')}</div>
+    ${edge ? `<hr><div class="menu"><button data-k="watch" data-whole="1"><span>Watchlist <small>down the whole ${side} side</small></span></button></div>` : ''}`, p => {
+    p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); insertPanel(t.cell, side, b.dataset.k, !!b.dataset.whole); });
   });
 }
 function typePop(anchor, t) {
@@ -1998,7 +2314,7 @@ function linkPop(anchor, t) {
     <div class="menu">
       ${[0, 1, 2, 3, 4, 5].map(g => `<button data-g="${g}" aria-current="${(t.cell.link || 0) === g}"><span>${g ? 'Group ' + g : 'Not linked'}</span>${g ? `<span class="link on" style="background:${LINK_COLORS[g]}">${g}</span>` : ''}</button>`).join('')}
     </div>
-    <p class="note">Panels in the same group always show the same symbol.</p>`, p => {
+    <p class="note">${t.kind === 'watch' ? 'Tapping a ticker in this watchlist opens it on every panel in the same group.' : 'Panels in the same group always show the same symbol.'}</p>`, p => {
     p.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
       const g = +b.dataset.g;
       t.cell.link = g;
@@ -2201,24 +2517,41 @@ function turn(n) {
 const outline = n => isLeaf(n) ? { id: n.id, size: n.size } : { dir: n.dir, size: n.size, children: n.children.map(outline) };
 const fromOutline = (o, byId) => o.id ? Object.assign(byId.get(o.id), { size: o.size }) : { dir: o.dir, size: o.size, children: o.children.map(x => fromOutline(x, byId)) };
 const panelsKey = n => leaves(n).map(c => c.id + c.kind).sort().join();
+// A watchlist down the left or right side of the whole layout: its place in the root, or -1.
+function sideAt(root) {
+  if (isLeaf(root) || root.dir !== 'h' || root.children.length < 2) return -1;
+  const k = root.children, w = c => isLeaf(c) && c.kind === 'watch';
+  return w(k[0]) ? 0 : w(k[k.length - 1]) ? k.length - 1 : -1;
+}
 function orientLayout() {
   if (!rotateOn || !matchMedia('(pointer: coarse)').matches) return false;
   const root = state.root;
   if (!root || isLeaf(root)) return false;
-  const land = isLandscape(), across = span(root, 'h'), down = span(root, 'v');
+  // A side watchlist stays where it is, and the rest of the layout turns.
+  const at = sideAt(root), rest = at < 0 ? null : root.children.filter((c, i) => i !== at);
+  const core = !rest ? root : rest.length === 1 ? rest[0] : { dir: 'h', size: rest.reduce((a, c) => a + c.size, 0), children: rest };
+  if (isLeaf(core)) return false;
+  const land = isLandscape(), across = span(core, 'h'), down = span(core, 'v');
   if (land ? across >= down : down >= across) return false;
   const key = panelsKey(root), memo = state.turns || (state.turns = {});
   memo[land ? 'portrait' : 'landscape'] = { key, root: outline(root) };
   const back = memo[land ? 'landscape' : 'portrait'];
   if (back && back.key === key) state.root = fromOutline(back.root, new Map(leaves(root).map(c => [c.id, c])));
   else {
-    const rows = chartGrid(root);
+    const rows = chartGrid(core);
+    let turned;
     if (rows) {
       const cells = rows.flat(), R = rows.length, C = rows[0].length, out = [];
       cells.forEach(c => { c.size = 1; });
       for (let i = 0; i < C; i++) out.push({ dir: 'h', size: 1, children: cells.slice(i * R, (i + 1) * R) });
-      state.root = normalize({ dir: 'v', size: 1, children: out });
-    } else state.root = normalize(turn(root));
+      turned = normalize({ dir: 'v', size: 1, children: out });
+    } else turned = normalize(turn(core));
+    if (!rest) state.root = turned;
+    else {
+      turned.size = core.size;
+      const side = root.children[at];
+      state.root = { dir: 'h', size: root.size, children: at === 0 ? [side, turned] : [turned, side] };
+    }
   }
   save();
   return true;
@@ -2684,8 +3017,12 @@ syncStream();
 // A new device only lacks the app password (or its settings): open the data panel right away.
 if (dataCfg.mode === 'schwab' && !dataCfg.pass) openData();
 setInterval(() => {
-  if (isLive()) { wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); }); syncStream(); }
-  else wanted().forEach(sym => tick(store(sym)));
+  if (isLive()) {
+    wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); });
+    syncStream();
+    // Watchlist prices stream from Schwab; a fresh batch now and then fills any gaps.
+    if (Date.now() - quotesAt > (ws && ws.authed && ws.schwab ? 120e3 : 15e3)) refreshQuotes();
+  } else new Set([...wanted(), ...watchSyms()]).forEach(sym => tick(store(sym)));
   tiles.forEach(t => t.update());
   checkAlerts();
 }, 700);
