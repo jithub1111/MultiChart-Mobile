@@ -285,6 +285,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .hint span { overflow: hidden; text-overflow: ellipsis; }
 .hint button { border: 0; background: var(--head); border-radius: 99px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
 .tile.drawing .body { cursor: crosshair; }
+/* separate volume chart: price on top, volume in its own strip below a thin line */
+.cmain { position: absolute; left: 0; right: 0; top: 0; bottom: calc(18% + 28px); }
+.cvol { position: absolute; left: 0; right: 0; bottom: 0; height: calc(18% + 28px); border-top: 1px solid var(--line); }
 /* highlight to zoom */
 .tile.hlzoom .body { touch-action: none; }
 .hlband { position: absolute; top: 0; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 18%, transparent); border-inline: 1px solid var(--accent); }
@@ -1037,6 +1040,16 @@ function setZoomMode(m) {
   try { localStorage.setItem(ZOOM_KEY, m); } catch (e) {}
   tiles.forEach(t => t.chart && t.applyZoomMode());
 }
+// Volume either sits under the candles (default) or gets its own strip with its own scale.
+const VOLSEP_KEY = 'multichart-volsep-v1';
+let volSep = false;
+try { volSep = localStorage.getItem(VOLSEP_KEY) === '1'; } catch (e) {}
+function setVolSep(on) {
+  volSep = on;
+  try { localStorage.setItem(VOLSEP_KEY, on ? '1' : '0'); } catch (e) {}
+  for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); }
+  render();
+}
 // The newest session from pre-market on; a day that has barely started brings the day before with it.
 function dayStart(list) {
   const day = b => Math.floor(b.time / 86400);
@@ -1054,13 +1067,13 @@ function dayStart(list) {
 // Gray bands behind pre-market and after-hours bars. It is a chart plugin, so the chart draws it
 // under the grid and candles. Color and opacity are set in Colors.
 class SessionShade {
-  constructor(tile) { this.tile = tile; this.redraw = () => {}; }
+  constructor(tile, chart) { this.tile = tile; this.chart = chart; this.redraw = () => {}; }
   attached({ requestUpdate }) { this.redraw = requestUpdate; }
   paneViews() { return [this]; }
   zOrder() { return 'bottom'; }
   renderer() { return this; }
   draw(target) {
-    const t = this.tile, L = t.list, ts = t.chart.timeScale(), r = ts.getVisibleLogicalRange();
+    const t = this.tile, L = t.list, ts = (this.chart || t.chart).timeScale(), r = ts.getVisibleLogicalRange();
     if (!shadeFill || !t.intraday || !L || !L.length || !r) return;
     const half = ts.options().barSpacing / 2, end = Math.min(L.length - 1, Math.ceil(r.to));
     target.useBitmapCoordinateSpace(({ context: c, bitmapSize, horizontalPixelRatio: hr }) => {
@@ -1118,16 +1131,52 @@ class Tile {
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
       this.$('.hint button').addEventListener('click', () => this.setMode(null));
       this.lines = [];
-      this.chart = LightweightCharts.createChart(body, {
+      const sep = volSep;
+      if (sep) body.insertAdjacentHTML('afterbegin', '<div class="cmain"></div><div class="cvol"></div>');
+      const base = {
         autoSize: true,
         layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
-        rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
         timeScale: { rightOffset: 4, minBarSpacing: 0.05 },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
-      });
+      };
+      this.chart = LightweightCharts.createChart(sep ? this.$('.cmain') : body, { ...base,
+        rightPriceScale: { scaleMargins: { top: 0.06, bottom: sep ? 0.06 : 0.24 } },
+        timeScale: { ...base.timeScale, visible: !sep } });
       this.chart.applyOptions(chartColors());
-      this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
-      this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      if (sep) {
+        // Volume in its own chart below, with its own scale on the right, kept in step with the price chart.
+        this.vchart = LightweightCharts.createChart(this.$('.cvol'), { ...base, layout: { ...base.layout, attributionLogo: false }, rightPriceScale: { scaleMargins: { top: 0.15, bottom: 0 } } });
+        this.vchart.applyOptions(chartColors());
+        this.volume = this.vchart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceLineVisible: false });
+        this.volume.attachPrimitive(this.vshade = new SessionShade(this, this.vchart));
+        const pts = this.chart.timeScale(), vts = this.vchart.timeScale();
+        let lead = null, leadT = 0;
+        const follow = (src, dst) => src.subscribeVisibleLogicalRangeChange(r => {
+          if (!r || (lead && lead !== src && performance.now() - leadT < 120)) return;
+          lead = src; leadT = performance.now();
+          dst.setVisibleLogicalRange(r);
+        });
+        follow(pts, vts); follow(vts, pts);
+        // One crosshair across both.
+        let echo = false;
+        this.chart.subscribeCrosshairMove(p => {
+          if (echo) return;
+          echo = true;
+          const d = p.time !== undefined && p.logical !== undefined ? this.volume.dataByIndex(Math.round(p.logical)) : null;
+          if (d) this.vchart.setCrosshairPosition(d.value, p.time, this.volume); else this.vchart.clearCrosshairPosition();
+          echo = false;
+        });
+        this.vchart.subscribeCrosshairMove(p => {
+          if (echo) return;
+          echo = true;
+          const d = p.time !== undefined && p.logical !== undefined ? this.candles.dataByIndex(Math.round(p.logical)) : null;
+          if (d) this.chart.setCrosshairPosition(d.close, p.time, this.candles); else this.chart.clearCrosshairPosition();
+          echo = false;
+        });
+      } else {
+        this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
+        this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      }
       this.candles = this.chart.addCandlestickSeries(candleColors());
       this.vw = this.chart.addLineSeries({ color: css('--vwap'), lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
       this.candles.attachPrimitive(this.shade = new SessionShade(this));
@@ -1149,13 +1198,13 @@ class Tile {
       reset.addEventListener('click', () => { this.fitView(); });
       body.append(band, reset);
       let hl = null;
-      const paneX = e => { const r = body.getBoundingClientRect(); return Math.max(0, Math.min(this.chart.timeScale().width(), e.clientX - r.left)); };
+      const paneX = e => { const r = body.getBoundingClientRect(); return Math.max(0, Math.min(this.plotWidth(), e.clientX - r.left)); };
       body.addEventListener('pointerdown', e => {
         if (hl) { hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
         if (zoomMode !== 'highlight' || this.mode || e.button > 0 || e.target.closest('.hint, .zoomreset')) return;
-        if (e.clientX - body.getBoundingClientRect().left > this.chart.timeScale().width()) return;  // on the price scale
+        if (e.clientX - body.getBoundingClientRect().left > this.plotWidth()) return;  // on the price scale
         hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e) };
-        band.style.height = (body.clientHeight - this.chart.timeScale().height()) + 'px';
+        band.style.height = (body.clientHeight - (this.vchart || this.chart).timeScale().height()) + 'px';
       }, true);
       body.addEventListener('pointermove', e => {
         if (!hl || e.pointerId !== hl.id) return;
@@ -1169,7 +1218,7 @@ class Tile {
         const { x0, x1 } = hl;
         hl = null; band.hidden = true;
         if (e.type !== 'pointerup' || Math.abs(x1 - x0) < 12) return;
-        const ts = this.chart.timeScale(), a = ts.coordinateToLogical(Math.min(x0, x1)), b = ts.coordinateToLogical(Math.max(x0, x1));
+        const ts = (this.vchart || this.chart).timeScale(), a = ts.coordinateToLogical(Math.min(x0, x1)), b = ts.coordinateToLogical(Math.max(x0, x1));
         if (a == null || b == null) return;
         ts.setVisibleLogicalRange({ from: a, to: b });
         this.showReset();
@@ -1180,7 +1229,7 @@ class Tile {
       body.addEventListener('pointerdown', () => { this.autoFit = false; }, true);
       body.addEventListener('wheel', () => { this.autoFit = false; }, { capture: true, passive: true });
       // The plot area changes width when the panel resizes or the price labels grow or shrink.
-      this.chart.timeScale().subscribeSizeChange(() => { if (this.autoFit && this.list) this.refit(); });
+      (this.vchart || this.chart).timeScale().subscribeSizeChange(() => { if (this.autoFit && this.list) this.refit(); });
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
@@ -1193,8 +1242,19 @@ class Tile {
   applyZoomMode() {
     const hl = zoomMode === 'highlight';
     this.el.classList.toggle('hlzoom', hl);
-    this.chart.applyOptions({ handleScroll: { pressedMouseMove: !hl, horzTouchDrag: !hl, vertTouchDrag: !hl } });
+    [this.chart, this.vchart].forEach(c => c && c.applyOptions({ handleScroll: { pressedMouseMove: !hl, horzTouchDrag: !hl, vertTouchDrag: !hl } }));
     if (!hl) this.$('.zoomreset').hidden = true;
+  }
+  // Width of the plot area (the price chart hides its time axis when volume has its own strip).
+  plotWidth() { return (this.vchart || this.chart).timeScale().width(); }
+  // Both charts' price scales get the same width, so their bars line up.
+  alignScales() {
+    if (!this.vchart) return;
+    const w = Math.max(this.chart.priceScale('right').width(), this.vchart.priceScale('right').width());
+    if (w && w !== this.scaleW) {
+      this.scaleW = w;
+      [this.chart, this.vchart].forEach(c => c.applyOptions({ rightPriceScale: { minimumWidth: w } }));
+    }
   }
   showReset() {
     const b = this.$('.zoomreset');
@@ -1246,7 +1306,8 @@ class Tile {
       this.candles.setData(list);
       this.volume.setData(this.volData(list));
       this.vw.setData(this.showVwap ? vwap(list) : []);
-      this.chart.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } });
+      [this.chart, this.vchart].forEach(c => c && c.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } }));
+      this.alignScales();
       if (!keepView) {
         this.fitView();
         this.setMode(null);
@@ -1267,6 +1328,7 @@ class Tile {
       const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
       if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); }
       if (this.autoFit && list.length !== this.fitN) this.refit();
+      this.alignScales();
       const lg = this.$('.legend');
       if (this.showVwap && lb) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
       else lg.innerHTML = '';
@@ -1293,6 +1355,7 @@ class Tile {
   retheme() {
     if (!this.chart) return;
     this.chart.applyOptions(chartColors());
+    if (this.vchart) { this.vchart.applyOptions(chartColors()); this.vshade.redraw(); }
     this.candles.applyOptions(candleColors());
     this.vw.applyOptions({ color: css('--vwap') });
     this.shade.redraw();
@@ -1366,7 +1429,7 @@ class Tile {
     this.paintDrawings();
   }
   onChartTap(x, y) {
-    if (x > this.chart.timeScale().width()) return;
+    if (x > this.plotWidth() || (this.vchart && y > this.$('.cmain').clientHeight)) return;
     const price = this.candles.coordinateToPrice(y);
     const logical = this.chart.timeScale().coordinateToLogical(x);
     if (price == null || logical == null) return;
@@ -1405,7 +1468,7 @@ class Tile {
     this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.cell.sym}${this.kind === 'chart' ? ' · ' + this.cell.tf : ''}</small>`;
     this.$('.edit [data-a=del]').disabled = allCells().length < 2;
   }
-  destroy() { if (this.chart) this.chart.remove(); }
+  destroy() { if (this.chart) this.chart.remove(); if (this.vchart) this.vchart.remove(); }
 }
 
 /* ---------- layout state ---------- */
@@ -1419,6 +1482,7 @@ const DEFAULT_CHARTS = [
 // Each preset is rows of panel codes: c = chart, l = Level II, t = Time & Sales.
 const PRESETS = [
   ['c'], ['cc'], ['c', 'c'], ['c', 'cc'], ['cc', 'cc'], ['cc', 'cc', 'cc'],
+  ['cc', 'cc', 'cc', 'cc'], ['cccc', 'cccc'],  // 8 charts: 2 across for portrait, 4 across for landscape
   ['c', 'lt'], ['c', 'c', 'lt'], ['cc', 'll', 'tt'], ['cc', 'cc', 'll', 'tt']
 ];
 const CODE = { c: 'chart', l: 'l2', t: 'ts' };
@@ -1759,6 +1823,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
     <hr>
     <div class="menu">
+      <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
     </div>`, p => {
@@ -1766,6 +1831,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       setZoomMode(b.dataset.zoom); closePop();
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
+    p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
     p.querySelector('[data-a=layout]').onclick = () => layoutPop(anchor);
     p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
   });
@@ -1829,7 +1895,7 @@ function setScale(v) {
 }
 function applyScale() {
   document.documentElement.style.setProperty('--scale', uiScale());
-  tiles.forEach(t => { if (t.chart) { t.chart.applyOptions({ layout: { fontSize: chartFont() } }); t.markKey = null; } });
+  tiles.forEach(t => { if (t.chart) { [t.chart, t.vchart].forEach(c => c && c.applyOptions({ layout: { fontSize: chartFont() } })); t.markKey = null; } });
   closePop();
   renderTabs();
 }
@@ -2038,7 +2104,7 @@ let shadeFill = '';
 function paintShade() {
   const pct = shadePct();
   shadeFill = pct ? css('--ext') + Math.round(pct * 2.55).toString(16).padStart(2, '0') : '';
-  tiles.forEach(t => t.shade && t.shade.redraw());
+  tiles.forEach(t => { if (t.shade) t.shade.redraw(); if (t.vshade) t.vshade.redraw(); });
 }
 const isLight = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 140; };
 function applyColors() {
