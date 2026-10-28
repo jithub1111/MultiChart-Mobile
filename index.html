@@ -1,4 +1,12 @@
 <title>Multichart</title>
+<!-- Added to the Home Screen, the app opens full screen without Safari's bars. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Multichart">
+<meta name="theme-color" content="#050608">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1075,7 +1083,8 @@ class Tile {
         autoSize: true,
         layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
         rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
-        timeScale: { rightOffset: 4 }
+        timeScale: { rightOffset: 4 },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       });
       this.chart.applyOptions(chartColors());
       this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
