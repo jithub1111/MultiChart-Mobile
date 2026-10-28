@@ -228,6 +228,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .fnote { margin: 0; padding: 12px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .fnote.err { color: var(--fg); }
 .fnote a, .fdesc a { color: var(--accent); }
+.fform { display: flex; gap: 6px; padding: 0 12px 12px; }
+.fform input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 16px; }
 .nitem { display: block; padding: 8px 10px; border-bottom: 1px solid var(--grid); color: var(--fg); text-decoration: none; }
 .nitem:hover { background: var(--hover); }
 .nitem.fresh { box-shadow: inset 3px 0 var(--accent); }
@@ -1150,11 +1152,11 @@ const FUND_TTL = { news: 3 * 60e3, stats: 10 * 60e3, company: 30 * 60e3 };
 const fundCache = new Map();
 function fundData(part, sym) {
   const k = part + ':' + sym, old = fundCache.get(k);
-  if (old && (old.wait || Date.now() - old.at < (old.error ? 60e3 : FUND_TTL[part]))) return old;
+  if (old && (old.wait || old.code === 'seccontact' || Date.now() - old.at < (old.error ? 60e3 : FUND_TTL[part]))) return old;  // the email form stays until it's filled in
   // Keep showing the last answer while a fresh one loads.
   const c = { at: Date.now(), data: old && old.data, error: null };
   c.wait = fetchFund(part, sym)
-    .then(d => { c.data = d; }, e => { c.error = e.message; })
+    .then(d => { c.data = d; }, e => { c.error = e.message; c.code = e.code; })
     .finally(() => { c.wait = null; c.at = Date.now(); tiles.forEach(t => t.kind === 'fund' && t.cell.sym === sym && t.paintFund()); });
   fundCache.set(k, c);
   return c;
@@ -1180,6 +1182,23 @@ async function fetchFund(part, sym) {
   } catch (e) {
     if (e.code === 'notfound') throw new Error('Your Schwab helper needs its latest update for this panel. It installs itself a minute or two after this change is merged.');
     throw e;
+  }
+}
+// The SEC wants a contact email with each request. It is saved in the Schwab helper, which sends it to the SEC.
+const secContactForm = () => `<p class="fnote err">The SEC asks apps that read its site to include a contact email, and it turned this request away without one. Type an email for your Schwab helper to send with its SEC requests. Only the SEC sees it, and it is saved in your helper, not in the app's public code.</p>
+  <form class="fform"><input type="email" name="email" autocomplete="email" placeholder="you@example.com" aria-label="Contact email for the SEC" required><button class="btn primary" type="submit">Save</button></form>`;
+async function saveSecContact(form) {
+  const email = form.email.value.trim(), btn = form.querySelector('button');
+  if (!email) return form.email.focus();
+  btn.disabled = true;
+  try {
+    await helper('/settings', { secContact: email });
+    [...fundCache.keys()].filter(k => k.startsWith('company:')).forEach(k => fundCache.delete(k));
+    tiles.forEach(t => t.kind === 'fund' && t.paintFund());
+    toast('Saved. Loading the company profile and filings.');
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.code === 'notfound' ? 'Your Schwab helper needs its latest update first. It installs itself a minute or two after this change is merged.' : esc(e.message), true);
   }
 }
 const fNum = (v, d = 2) => v == null || v === '' || !isFinite(v) || +v === 0 ? null : (+v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -1455,6 +1474,7 @@ class Tile {
         const b = e.target.closest('[data-ff]');
         if (b) { this.cell.ffilter = b.dataset.ff; save(); this.paintFund(); }
       });
+      this.$('.fbody').addEventListener('submit', e => { e.preventDefault(); saveSecContact(e.target); });
     } else {
       // The Level II + T&S box shows both side by side for one symbol.
       this.$('.body').innerHTML = (this.kind === 'lts' ? '<div class="duo"><div class="tbl"></div><div class="tbl"></div></div>' : '<div class="tbl"></div>') + '<div class="msg" hidden></div>';
@@ -1468,6 +1488,7 @@ class Tile {
     const main = fundData(tab === 'news' ? 'news' : tab === 'stats' ? 'stats' : 'company', sym);
     const extra = tab === 'profile' ? fundData('stats', sym).data : null;
     const html = main.data ? (tab === 'news' ? newsView(main.data) : tab === 'stats' ? statsView(main.data, sym) : tab === 'profile' ? profileView(main.data, extra, sym) : filingsView(main.data, sym, this.cell.ffilter))
+      : main.code === 'seccontact' ? secContactForm()
       : main.error ? `<p class="fnote err">${esc(main.error)}</p>` : `<p class="fnote">Loading ${FUND_TABS[tab].toLowerCase()} for ${esc(sym)}…</p>`;
     if (html === this.fundHtml) return;
     // Refreshing the same list keeps your place in it.
@@ -2271,7 +2292,7 @@ function tabPop(anchor) {
 
 /* ---------- saved layouts ---------- */
 const SAVED_KEY = 'multichart-saved-layouts-v1';
-const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let savedLayouts = [];
 try { savedLayouts = JSON.parse(localStorage.getItem(SAVED_KEY)) || []; } catch (e) {}
 function persistSaved() { try { localStorage.setItem(SAVED_KEY, JSON.stringify(savedLayouts)); } catch (e) {} }

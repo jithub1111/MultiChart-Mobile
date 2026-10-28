@@ -114,8 +114,16 @@ async function news(sym, name) {
   }).slice(0, 60);
   return { items, feeds: got };
 }
-async function sec(url, as = 'json') {
-  const r = await fetch(url, { headers: { 'User-Agent': AGENT, Accept: as === 'json' ? 'application/json' : 'text/plain' } });
+// The SEC turns away automated requests that don't name a contact email, so the helper sends the
+// one saved from the app (kept here in the helper, never in the app's public code).
+const SEC_KEY = 'sec-contact';
+const isEmail = v => typeof v === 'string' && v.length <= 120 && /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[a-z]{2,}$/i.test(v);
+async function sec(env, url, as = 'json') {
+  const contact = await env.TOKENS.get(SEC_KEY);
+  const agent = contact ? `MultiChart-Mobile personal app ${contact}` : AGENT;
+  const r = await fetch(url, { headers: { 'User-Agent': agent, Accept: as === 'json' ? 'application/json' : 'text/plain' } });
+  if (r.status === 403 && !contact) throw new Fail('The SEC asks apps that read its site to include a contact email.', 502, 'seccontact');
+  if (r.status === 403) throw new Fail("The SEC's site turned the request away (403). It may be limiting requests for a while; try again later.", 502, 'sec');
   if (!r.ok) throw new Fail(`The SEC's site returned an error (${r.status}).`, 502, 'sec');
   return as === 'json' ? r.json() : r.text();
 }
@@ -123,7 +131,7 @@ async function sec(url, as = 'json') {
 async function cikFor(env, sym) {
   const key = 'cik:' + sym, hit = await env.TOKENS.get(key);
   if (hit !== null) return hit;
-  const list = await sec('https://www.sec.gov/include/ticker.txt', 'text');
+  const list = await sec(env, 'https://www.sec.gov/include/ticker.txt', 'text');
   const t = sym.toLowerCase().replace(/[./]/g, '-').replace(/[^a-z0-9-]/g, '');
   const m = t && list.match(new RegExp(`^${t}\\t(\\d+)`, 'm'));
   const cik = m ? m[1] : '';
@@ -143,7 +151,7 @@ async function wikiSummary(cik) {
 async function company(env, sym) {
   const cik = String(+(await cikFor(env, sym)) || '');
   if (!cik) return { cik: null };
-  const [sub, wiki] = await Promise.allSettled([sec(`https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`), wikiSummary(cik)]);
+  const [sub, wiki] = await Promise.allSettled([sec(env, `https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`), wikiSummary(cik)]);
   if (sub.status === 'rejected') throw sub.reason;
   const s = sub.value, f = s.filings.recent, a = (s.addresses && s.addresses.business) || {};
   const filings = f.form.slice(0, 80).map((form, i) => {
@@ -195,6 +203,15 @@ async function route(req, env, url) {
     }
     const t = await loadTokens(env);
     return json({ accessToken: access, accessExp: t.accessExp, refreshExp: t.refreshExp, streamer });
+  }
+  if (p === '/settings') {
+    if (req.method === 'POST') {
+      const { secContact } = await req.json().catch(() => ({}));
+      if (secContact === '') await env.TOKENS.delete(SEC_KEY);
+      else if (isEmail(String(secContact || '').trim())) await env.TOKENS.put(SEC_KEY, String(secContact).trim());
+      else throw new Fail('That does not look like an email address.', 400, 'email');
+    }
+    return json({ secContact: await env.TOKENS.get(SEC_KEY) || '' });
   }
   if (p === '/pricehistory' || p === '/quotes' || p === '/instruments') return json(await schwab(env, `/marketdata/v1${p}${url.search}`));
   const sym = (url.searchParams.get('symbol') || '').toUpperCase().trim();
