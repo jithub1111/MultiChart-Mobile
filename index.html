@@ -346,6 +346,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .status i { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: #e0a526; }
 .status[data-state="connecting"] i { background: #2fa7e0; } .status[data-state="live"] i { background: #2fae5d; } .status[data-state="error"] i { background: #e8644f; }
 .sheet details { margin-top: 14px; font-size: 13px; color: var(--muted); } .sheet summary { cursor: pointer; }
+.movebox { margin-top: 8px; } .srcbox ~ .movebox { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--line); }
 .sheet .row2 { display: flex; gap: 8px; margin-top: 10px; } .sheet .row2 .btn { flex: 1; justify-content: center; }
 @media (max-width: 400px) { .brand { display: none; } .bar { gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { .feed i { animation: none; } }
@@ -578,7 +579,7 @@ try { dataCfg = { ...dataCfg, ...JSON.parse(localStorage.getItem(DATA_KEY)) }; }
 if (dataCfg.mode === 'live') dataCfg.mode = 'alpaca';
 // A setup link (made under Data source → Schwab) carries the helper and app password in #live=…
 // The part after # never reaches a server, and it is cleared from the address bar right away.
-const b64 = { enc: t => btoa(String.fromCharCode(...new TextEncoder().encode(t))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+const b64 = { enc: t => btoa(Array.from(new TextEncoder().encode(t), c => String.fromCharCode(c)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
   dec: t => new TextDecoder().decode(Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))) };
 if (location.hash.startsWith('#live=')) {
   try {
@@ -1948,17 +1949,47 @@ function paintDataStatus() {
   el.dataset.state = feed.state;
   el.innerHTML = `<i></i><span>${esc(text)}</span>`;
 }
+// All of the app's settings as one code, to carry them to another device or to the Home Screen app,
+// which iPhone keeps apart from Safari.
+const SETTINGS_TAG = 'MC1.';
+function settingsCode() {
+  save();
+  const all = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('multichart-')) all[k] = localStorage.getItem(k); }
+  return SETTINGS_TAG + b64.enc(JSON.stringify(all));
+}
+function loadSettings(code) {
+  let all;
+  try { all = JSON.parse(b64.dec(code.replace(/\s+/g, '').slice(SETTINGS_TAG.length))); } catch (e) {}
+  if (!code.trim().startsWith(SETTINGS_TAG) || !all || typeof all !== 'object' || !Object.keys(all).length) return false;
+  Object.keys(localStorage).filter(k => k.startsWith('multichart-')).forEach(k => localStorage.removeItem(k));
+  Object.entries(all).forEach(([k, v]) => { if (k.startsWith('multichart-') && typeof v === 'string') localStorage.setItem(k, v); });
+  location.reload();
+  return true;
+}
 function openData() {
   closePop();
   sheet.dataset.kind = 'data';
   sheet.setAttribute('aria-label', 'Data source');
   const mode = dataCfg.mode;
+  // On a new device (or a new Home Screen app), offer to bring settings over before anything else.
+  const fresh = mode === 'schwab' && !dataCfg.pass;
+  const move = `<div class="movebox">
+      <h4>${fresh ? 'Coming from Safari or another device?' : 'Move your setup'}</h4>
+      <p>${fresh ? 'Paste the settings you copied there (under <b>Move your setup</b>) to bring over your layouts, colors, drawings, alerts and live data in one step.'
+        : 'Copy all your settings here, then paste them into the Home Screen app or another device: layouts, tabs, colors, drawings, alerts, zoom and live data. They include your app password, so only send them to yourself.'}</p>
+      ${fresh ? '' : `<div class="row2"><button class="btn" id="dsCopyAll">Copy all my settings</button></div>
+      <label class="field" id="dsAllBox" hidden>Your settings (select all and copy)<input id="dsAll" readonly></label>`}
+      <label class="field">Paste settings from another device<input id="dsPasteAll" autocomplete="off" spellcheck="false" placeholder="MC1.…"></label>
+      <div class="row2"><button class="btn${fresh ? ' primary' : ''}" id="dsLoadAll">Load settings</button></div>
+    </div>`;
   sheet.innerHTML = `<div class="zin">
     <div class="sheet-head"><h3>Data source</h3><button class="ib" id="sheetClose" aria-label="Close data source">${CLOSE_X}</button></div>
     <div class="seg" role="group" aria-label="Data source">
       ${[['demo', 'Demo'], ['schwab', 'Schwab'], ['alpaca', 'Alpaca']].map(([m, label]) => `<button data-mode="${m}" aria-pressed="${mode === m}">${label}</button>`).join('')}
     </div>
     <div class="status"></div>
+    ${fresh ? move : ''}
     <div class="srcbox" data-for="schwab" ${mode === 'schwab' ? '' : 'hidden'}>
       <h4>Your Schwab helper</h4>
       <label class="field">Helper address<input id="dsHelper" autocomplete="off" spellcheck="false" placeholder="https://multichart-schwab.yourname.workers.dev" value="${esc(dataCfg.helper)}"></label>
@@ -2011,7 +2042,8 @@ function openData() {
         <label class="field">Data URL<input id="dsBase" placeholder="https://data.alpaca.markets" value="${esc(dataCfg.base)}"></label>
         <label class="field">Stream URL<input id="dsStream" placeholder="wss://stream.data.alpaca.markets/v2/iex" value="${esc(dataCfg.stream)}"></label>
       </details>
-    </div></div>`;
+    </div>
+    ${fresh ? '' : move}</div>`;
   sheet.hidden = false;
   paintDataStatus();
   const $ = id => sheet.querySelector('#' + id);
@@ -2063,6 +2095,19 @@ function openData() {
     } catch (e) { note(e.message); $('dsFinish').disabled = false; }
   };
   if (mode === 'schwab') signState();
+  // Moving settings
+  if ($('dsCopyAll')) $('dsCopyAll').onclick = async () => {
+    const code = settingsCode();
+    try { await navigator.clipboard.writeText(code); toast('Settings copied. Open the Home Screen app (or the other device), tap the data badge at the top, and paste them.'); }
+    catch (e) { $('dsAllBox').hidden = false; $('dsAll').value = code; $('dsAll').select(); }
+  };
+  $('dsLoadAll').onclick = () => {
+    const code = $('dsPasteAll').value.trim();
+    if (!code) return note('Paste the settings you copied first.');
+    if (!code.startsWith(SETTINGS_TAG)) return note('That is not a settings code. On the other device, tap Copy all my settings and paste what it copies.');
+    if (!fresh && !confirm('Replace the layouts, colors, alerts and settings in this app with the pasted ones?')) return;
+    if (!loadSettings(code)) note('Those settings could not be read. Copy them again and paste the whole thing.');
+  };
   // Alpaca
   $('dsSave').onclick = () => {
     const key = $('dsKey').value.trim(), secret = $('dsSecret').value.trim();
@@ -2081,8 +2126,8 @@ document.documentElement.style.setProperty('--scale', uiScale());
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();
-// A new device only lacks the app password: ask for it right away.
-if (dataCfg.mode === 'schwab' && !dataCfg.pass) { openData(); sheet.querySelector('#dsPass').focus(); }
+// A new device only lacks the app password (or its settings): open the data panel right away.
+if (dataCfg.mode === 'schwab' && !dataCfg.pass) openData();
 setInterval(() => {
   if (isLive()) { wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); }); syncStream(); }
   else wanted().forEach(sym => tick(store(sym)));
