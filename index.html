@@ -452,6 +452,14 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .toast i { width: 10px; height: 10px; border-radius: 50%; background: var(--alert); flex: none; }
 .toast b { font-family: var(--num); }
 
+/* picture-in-picture: this window steps aside while the app runs in its floating window */
+.pipcover { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; background: var(--bg); }
+.pipcover[hidden] { display: none; }
+.pipcover > div { zoom: var(--scale); }
+.pipcover p { margin: 0 0 14px; color: var(--muted); font-size: 15px; }
+/* the canvas and video behind a floating picture: on the page, but too small and faint to see */
+.pipfeed { position: fixed; left: 0; bottom: 0; width: 4px; height: 4px; opacity: .01; pointer-events: none; }
+
 /* colors sheet */
 .sheet {
   position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(calc(360px * var(--scale)), 100vw); overflow: auto;
@@ -520,6 +528,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 <div class="pop" id="pop" hidden></div>
 <aside class="sheet" id="sheet" hidden aria-label="Colors"></aside>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="pipcover" id="pipCover" hidden><div><p>Multichart is showing in picture-in-picture.</p><button class="btn primary" id="pipBack">Bring it back here</button></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
@@ -920,7 +929,7 @@ function addTrade(s, ms, price, size, tapeOnly) {
 }
 // Every minute, swap the IEX-only minutes that are now old enough for full-market ones.
 async function backfill() {
-  if (!isLive() || dataCfg.mode !== 'alpaca') return;
+  if (held || !isLive() || dataCfg.mode !== 'alpaca') return;
   for (const s of Object.values(stores)) {
     if (!s.ready || !s.sipUntil || !wanted().has(s.sym)) continue;
     const cut = Date.now() - SIP_DELAY;
@@ -938,6 +947,8 @@ async function backfill() {
 }
 
 let ws = null, wsSyms = new Set(), wsTries = 0, wsTimer = 0;
+// True while the app runs in its picture-in-picture window instead: that copy holds the one live connection.
+let held = false;
 // Symbols that need full chart data. Watchlist rows only need prices (see wquote).
 const wanted = () => new Set([...allCells().filter(c => c.kind !== 'watch').map(c => c.sym), ...alerts.filter(a => a.status === 'active').map(a => a.sym)]);
 function closeStream() {
@@ -946,7 +957,7 @@ function closeStream() {
   ws = null; wsSyms = new Set(); sKeys = {};
 }
 function syncStream() {
-  if (!isLive()) return closeStream();
+  if (!isLive() || held) return closeStream();
   if (!ws) { if (!wsTimer) openStream(); return; }
   if (!ws.authed) return;
   if (ws.schwab) return syncSchwab();
@@ -958,6 +969,7 @@ function syncStream() {
 }
 function openStream() {
   wsTimer = 0;
+  if (held) return;
   if (dataCfg.mode === 'schwab') return openSchwab();
   if (feed.state !== 'error') setFeed('connecting');
   let sock;
@@ -2544,6 +2556,7 @@ function tileMenu(anchor, t) {
       ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button><button data-a="wpick"><span>Columns <small>add and remove</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
         : `${t.kind === 'l2' || t.kind === 'lts' ? '<button data-a="l2cols"><span>Level II options <small>style and columns</small></span></button>' : ''}<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
+      ${vidPip && pipOk ? `<button data-a="pip"><span>${vp.on && vp.id === t.cell.id ? 'Stop floating this panel' : 'Float this panel <small>picture-in-picture</small>'}</span></button>` : ''}
       <hr>
       ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
       <hr>
@@ -2574,6 +2587,8 @@ function tileMenu(anchor, t) {
       toast(addToList(l, [sym]).length ? `Added <b>${esc(sym)}</b> to ${esc(l.name)}.${seen ? '' : ' Add a Watchlist panel from <b>Layout</b> to see it.'}` : `<b>${esc(sym)}</b> is already on ${esc(l.name)}.`);
     };
     p.querySelector('[data-a=max]').onclick = () => { closePop(); toggleMax(t); };
+    const pp = p.querySelector('[data-a=pip]');
+    if (pp) pp.onclick = () => { closePop(); floatVideo(t.cell.id); };
     p.querySelector('[data-a=del]').onclick = () => { closePop(); removePanel(t.cell.id); };
     p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
   });
@@ -2735,6 +2750,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
+      ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
     </div>`, p => {
     p.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
       setZoomMode(b.dataset.zoom); closePop();
@@ -2748,6 +2764,8 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     };
     p.querySelector('[data-a=layout]').onclick = () => layoutPop(anchor);
     p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
+    const pp = p.querySelector('[data-a=pip]');
+    if (pp) pp.onclick = () => { closePop(); docPip ? floatApp() : floatVideo(null); };
   });
 });
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
@@ -3349,6 +3367,225 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden
 applyColors();
 document.documentElement.style.setProperty('--scale', uiScale());
 
+/* ---------- picture-in-picture ---------- */
+// Chrome and Edge on a computer can float a whole page. There the app opens again inside an
+// always-on-top window (?pip=1) and this window steps aside until it closes, so only one copy
+// holds the live connection, and changes made in the small window come back here.
+// Elsewhere (Safari, iPhone, iPad) only a video can float, so a picture of the tab, or of one
+// panel, is drawn onto a canvas with every heartbeat and played as a video.
+const inPip = new URLSearchParams(location.search).has('pip');
+const docPip = !inPip && 'documentPictureInPicture' in window;
+const vidPip = !inPip && !docPip && !!HTMLCanvasElement.prototype.captureStream
+  && !!(document.pictureInPictureEnabled || HTMLVideoElement.prototype.webkitSetPresentationMode);
+const vp = { on: false, id: null, cv: null, video: null, worker: null };
+let pipWin = null, pipOk = docPip || vidPip;
+document.getElementById('pipBack').addEventListener('click', () => pipWin && pipWin.close());
+
+async function floatApp() {
+  if (pipWin) return pipWin.focus();
+  const width = Math.round(Math.max(420, Math.min(960, innerWidth * 0.5)));
+  const height = Math.round(Math.max(280, Math.min(800, width * innerHeight / innerWidth)));
+  let w;
+  try { w = await documentPictureInPicture.requestWindow({ width, height }); }
+  catch (e) { toast(`Picture-in-picture did not open${e && e.message ? ': ' + esc(e.message) : '.'}`); return; }
+  pipWin = w; held = true;
+  closeStream(); closePop(); sheet.hidden = true;
+  document.getElementById('pipCover').hidden = false;
+  const d = w.document, u = new URL(location.href);
+  u.hash = ''; u.searchParams.set('pip', '1');
+  d.title = document.title;
+  d.head.insertAdjacentHTML('beforeend', `<style>html, body { margin: 0; height: 100%; overflow: hidden; background: ${css('--bg')}; } iframe { display: block; width: 100%; height: 100%; border: 0; }</style>`);
+  const f = d.createElement('iframe');
+  f.src = u.href; f.allow = 'clipboard-read; clipboard-write';
+  d.body.append(f);
+  // Closing it (or its "back to tab" button) brings the app back here, with whatever changed there.
+  w.addEventListener('pagehide', () => location.reload());
+}
+
+// The video needs a first frame before it may float, so it is made ahead of the first tap.
+function pipFeed() {
+  if (vp.video) return vp.video;
+  const cv = vp.cv = document.createElement('canvas'), v = vp.video = document.createElement('video');
+  cv.className = v.className = 'pipfeed';
+  cv.width = 320; cv.height = 180;
+  v.muted = v.playsInline = v.autoplay = true;
+  v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
+  document.body.append(cv, v);
+  paintPip();
+  v.srcObject = cv.captureStream();
+  v.play().catch(() => {});
+  const off = () => {
+    vp.on = false; vp.id = null;
+    if (vp.worker) { vp.worker.terminate(); vp.worker = null; }
+  };
+  v.addEventListener('leavepictureinpicture', off);
+  v.addEventListener('webkitpresentationmodechanged', () => { if (v.webkitPresentationMode !== 'picture-in-picture') off(); });
+  if (!v.requestPictureInPicture && !(v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture'))) pipOk = false;
+  return v;
+}
+// id: one panel, or null for the whole tab. Tapping the same choice again closes the floating picture.
+function floatVideo(id) {
+  const v = pipFeed();
+  if (vp.on && vp.id === id) {
+    if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+    else if (v.webkitSetPresentationMode) v.webkitSetPresentationMode('inline');
+    return;
+  }
+  vp.id = id; paintPip();
+  if (vp.on) return;
+  if (v.paused) v.play().catch(() => {});
+  let req;
+  try { req = v.requestPictureInPicture ? v.requestPictureInPicture() : (v.webkitSetPresentationMode('picture-in-picture'), Promise.resolve()); }
+  catch (e) { req = Promise.reject(e); }
+  req.then(() => {
+    vp.on = true;
+    // A page in the background gets its timers slowed to once a minute; a worker's ticks keep the picture moving.
+    try {
+      vp.worker = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 700)'], { type: 'text/javascript' })));
+      vp.worker.onmessage = () => { if (vp.on && Date.now() - lastBeat > 1500) beat(); };
+    } catch (e) {}
+  }).catch(e => { vp.id = null; toast(`Picture-in-picture did not open${e && e.message ? ': ' + esc(e.message) : '.'}`); });
+}
+function paintPip() {
+  const t = vp.id && tiles.get(vp.id), root = t && t.el.isConnected ? t.el : grid, R = root.getBoundingClientRect();
+  if (R.width < 2 || R.height < 2) return;
+  const k = Math.min(Math.max(devicePixelRatio || 1, 1), 2, 1600 / Math.max(R.width, R.height));
+  const cv = vp.cv, W = Math.round(R.width * k), H = Math.round(R.height * k);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const c = cv.getContext('2d');
+  c.setTransform(k, 0, 0, k, -R.left * k, -R.top * k);  // draw in page coordinates
+  c.globalAlpha = 1;
+  c.fillStyle = css('--bg'); c.fillRect(R.left, R.top, R.width, R.height);
+  const charts = new Map();
+  tiles.forEach(x => [x.chart, x.vchart].forEach(ch => ch && charts.set(ch.chartElement(), ch)));
+  let z = 1;
+  for (let a = root.parentElement; a; a = a.parentElement) z *= parseFloat(getComputedStyle(a).zoom) || 1;
+  paintNode(c, root, getComputedStyle(root), R, 1, z, charts);
+}
+// A small painter for this app's panels: boxes, borders, text, icons, form fields and charts.
+const shown = v => !!v && v !== 'none' && v !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(v);
+function paintNode(c, el, cs, clip, alpha, z, charts) {
+  if (cs.display === 'none' || cs.visibility === 'hidden') return;
+  const r = el.getBoundingClientRect();
+  if (r.right <= clip.left || r.left >= clip.right || r.bottom <= clip.top || r.top >= clip.bottom) return;
+  z *= parseFloat(cs.zoom) || 1;
+  alpha *= +cs.opacity;
+  if (alpha < 0.03) return;
+  c.globalAlpha = alpha;
+  // Hard-edged shadows only: the watchlist uses them for padding and for the selected row's stripe.
+  const shadows = cs.boxShadow === 'none' ? [] : cs.boxShadow.split(/,(?![^(]*\))/).map(sh => {
+    const col = sh.match(/rgba?\([^)]*\)|#\w+/), n = sh.replace(col, '').match(/-?[\d.]+px/g);
+    if (!col || !n || parseFloat(n[2] || 0) || !shown(col[0])) return null;
+    const [x, y, , sp = 0] = n.map(v => parseFloat(v) * z);
+    return { col: col[0], x, y, sp, inset: /inset/.test(sh) };
+  }).filter(Boolean);
+  shadows.filter(d => !d.inset).forEach(d => { c.fillStyle = d.col; c.fillRect(r.left + d.x - d.sp, r.top + d.y - d.sp, r.width + 2 * d.sp, r.height + 2 * d.sp); });
+  if (shown(cs.backgroundColor)) { c.fillStyle = cs.backgroundColor; c.fillRect(r.left, r.top, r.width, r.height); }
+  shadows.filter(d => d.inset).forEach(d => {
+    c.fillStyle = d.col;
+    if (d.x) c.fillRect(d.x > 0 ? r.left : r.right + d.x, r.top, Math.abs(d.x), r.height);
+    if (d.y) c.fillRect(r.left, d.y > 0 ? r.top : r.bottom + d.y, r.width, Math.abs(d.y));
+  });
+  [['Top', 0, 0, 1, 0], ['Bottom', 0, 1, 1, 0], ['Left', 0, 0, 0, 1], ['Right', 1, 0, 0, 1]].forEach(([s, x, y, w, h]) => {
+    const b = parseFloat(cs[`border${s}Width`]) * z;
+    if (!b || !shown(cs[`border${s}Color`])) return;
+    c.fillStyle = cs[`border${s}Color`];
+    c.fillRect(r.left + x * (r.width - b), r.top + y * (r.height - b), w ? r.width : b, h ? r.height : b);
+  });
+  // A chart's own canvases are up to date while the page shows; in the background they stop being
+  // drawn, so the chart is asked for a fresh picture instead.
+  const ch = document.hidden && charts.get(el), tag = el.tagName.toLowerCase();
+  if (ch) { try { c.drawImage(ch.takeScreenshot(), r.left, r.top, r.width, r.height); } catch (e) {} return; }
+  if (tag === 'svg') return paintSvg(c, el, r);
+  if (tag === 'select' || tag === 'input') return paintField(c, el, cs, r, z);
+  if (tag === 'canvas') { try { c.drawImage(el, r.left, r.top, r.width, r.height); } catch (e) {} return; }
+  if (tag === 'img') { if (el.complete && new URL(el.src, location.href).origin === location.origin) c.drawImage(el, r.left, r.top, r.width, r.height); return; }
+  const cut = cs.overflowX !== 'visible' || cs.overflowY !== 'visible';
+  const inner = cut ? { left: Math.max(clip.left, r.left), top: Math.max(clip.top, r.top), right: Math.min(clip.right, r.right), bottom: Math.min(clip.bottom, r.bottom) } : clip;
+  if (inner.right <= inner.left || inner.bottom <= inner.top) return;
+  if (cut) { c.save(); c.beginPath(); c.rect(inner.left, inner.top, inner.right - inner.left, inner.bottom - inner.top); c.clip(); }
+  // Ordinary content first, then positioned layers by z-index, as the browser stacks them.
+  const layer = s => { if (!s || s.position === 'static') return 0; const i = parseInt(s.zIndex, 10); return isNaN(i) ? 1 : i < 0 ? -1 : 1 + i; };
+  [...el.childNodes].map(n => { const s = n.nodeType === 1 ? getComputedStyle(n) : null; return [n, s, layer(s)]; })
+    .sort((a, b) => a[2] - b[2])
+    .forEach(([n, s]) => {
+      if (n.nodeType === 3) paintText(c, n, cs, inner, alpha, z);
+      else if (s) paintNode(c, n, s, inner, alpha, z, charts);
+    });
+  if (cut) c.restore();
+}
+function setFont(c, cs, z) {
+  c.font = `${cs.fontStyle} ${cs.fontWeight} ${parseFloat(cs.fontSize) * z}px ${cs.fontFamily}`;
+  if ('letterSpacing' in c) c.letterSpacing = (parseFloat(cs.letterSpacing) || 0) * z + 'px';
+  c.fillStyle = cs.color; c.textBaseline = 'middle';
+}
+function paintText(c, node, cs, clip, alpha, z) {
+  const s = node.data, a = s.search(/\S/);
+  if (a < 0) return;
+  const b = s.trimEnd().length, rg = document.createRange();
+  rg.setStart(node, a); rg.setEnd(node, b);
+  const all = rg.getBoundingClientRect(), rects = [...rg.getClientRects()];
+  if (!rects.length || all.right <= clip.left || all.left >= clip.right || all.bottom <= clip.top || all.top >= clip.bottom) return;
+  c.globalAlpha = alpha; setFont(c, cs, z);
+  const tx = t => (cs.textTransform === 'uppercase' ? t.toUpperCase() : cs.textTransform === 'lowercase' ? t.toLowerCase() : t).replace(/\s+/g, ' ');
+  if (rects.every(q => Math.abs(q.top - rects[0].top) < 2)) {
+    let t = tx(s.slice(a, b));
+    // Cut off with "…" where the page does.
+    if (cs.textOverflow === 'ellipsis' && all.right > clip.right + 1) {
+      const room = clip.right - all.left, k = all.width / Math.max(1, c.measureText(t).width);
+      while (t.length > 1 && c.measureText(t + '\u2026').width * k > room) t = t.slice(0, -1);
+      t += '\u2026';
+    }
+    return c.fillText(t, all.left, all.top + all.height / 2, all.width + 2);
+  }
+  // Wrapped text: put each word where it landed.
+  for (const m of s.slice(a, b).matchAll(/\S+/g)) {
+    rg.setStart(node, a + m.index); rg.setEnd(node, a + m.index + m[0].length);
+    const q = rg.getBoundingClientRect();
+    if (q.width && q.bottom > clip.top && q.top < clip.bottom) c.fillText(tx(m[0]), q.left, q.top + q.height / 2, q.width + 2);
+  }
+}
+function paintField(c, el, cs, r, z) {
+  const text = el.tagName === 'SELECT' ? (el.selectedOptions[0] || {}).text : /^(checkbox|radio|range|color)$/.test(el.type) ? '' : el.value || el.placeholder;
+  if (!text) return;
+  c.save(); c.beginPath(); c.rect(r.left, r.top, r.width, r.height); c.clip();
+  setFont(c, cs, z);
+  if (!el.value) c.globalAlpha *= 0.55;
+  const pad = (parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth)) * z;
+  c.fillText(text, r.left + pad, r.top + r.height / 2);
+  c.restore();
+}
+function paintSvg(c, svg, r) {
+  const vb = svg.viewBox && svg.viewBox.baseVal;
+  c.save(); c.beginPath(); c.rect(r.left, r.top, r.width, r.height); c.clip();
+  if (vb && vb.width && vb.height) {
+    const s = Math.min(r.width / vb.width, r.height / vb.height);
+    c.translate(r.left + (r.width - vb.width * s) / 2 - vb.x * s, r.top + (r.height - vb.height * s) / 2 - vb.y * s);
+    c.scale(s, s);
+  } else c.translate(r.left, r.top);
+  const base = c.globalAlpha;
+  svg.querySelectorAll('path, line, circle, ellipse, rect, polyline, polygon').forEach(sh => {
+    const st = getComputedStyle(sh), a = n => parseFloat(sh.getAttribute(n)) || 0;
+    if (st.display === 'none' || st.visibility === 'hidden' || sh.closest('defs, clipPath, mask, symbol, marker, pattern')) return;
+    let p = new Path2D();
+    const tag = sh.tagName.toLowerCase();
+    if (tag === 'path') p = new Path2D(sh.getAttribute('d') || '');
+    else if (tag === 'line') { p.moveTo(a('x1'), a('y1')); p.lineTo(a('x2'), a('y2')); }
+    else if (tag === 'circle') p.arc(a('cx'), a('cy'), a('r'), 0, 2 * Math.PI);
+    else if (tag === 'ellipse') p.ellipse(a('cx'), a('cy'), a('rx'), a('ry'), 0, 0, 2 * Math.PI);
+    else if (tag === 'rect') p.rect(a('x'), a('y'), a('width'), a('height'));
+    else {
+      const pts = (sh.getAttribute('points') || '').trim().split(/[\s,]+/).map(Number);
+      for (let i = 0; i + 1 < pts.length; i += 2) i ? p.lineTo(pts[i], pts[i + 1]) : p.moveTo(pts[i], pts[i + 1]);
+      if (tag === 'polygon') p.closePath();
+    }
+    c.globalAlpha = base * (st.opacity === '' ? 1 : +st.opacity);
+    if (shown(st.fill)) { c.fillStyle = st.fill; c.fill(p, st.fillRule === 'evenodd' ? 'evenodd' : 'nonzero'); }
+    if (shown(st.stroke)) { c.strokeStyle = st.stroke; c.lineWidth = parseFloat(st.strokeWidth) || 1; c.lineCap = st.strokeLinecap; c.lineJoin = st.strokeLinejoin; c.stroke(p); }
+  });
+  c.restore();
+}
+
 /* ---------- go ---------- */
 // Which side the camera cutout is on: the top of the phone points left at 90 degrees, right at 270.
 function markCutout() {
@@ -3367,7 +3604,11 @@ setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();
 // A new device only lacks the app password (or its settings): open the data panel right away.
 if (dataCfg.mode === 'schwab' && !dataCfg.pass) openData();
-setInterval(() => {
+// The app's heartbeat: prices, panels and alerts. A floating picture of the tab is redrawn with it.
+let lastBeat = 0;
+function beat() {
+  lastBeat = Date.now();
+  if (held) return;
   if (isLive()) {
     wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); });
     syncStream();
@@ -3376,7 +3617,10 @@ setInterval(() => {
   } else new Set([...wanted(), ...watchSyms()]).forEach(sym => tick(store(sym)));
   tiles.forEach(t => t.update());
   checkAlerts();
-}, 700);
+  if (vp.on) paintPip();
+}
+setInterval(beat, 700);
+if (vidPip) setTimeout(pipFeed, 1000);
 setInterval(backfill, 60000);
 // Fundamentals panels check for fresh news and update "5m ago" times once a minute.
 setInterval(() => tiles.forEach(t => t.kind === 'fund' && t.paintFund()), 60000);
