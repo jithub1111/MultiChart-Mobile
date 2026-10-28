@@ -220,6 +220,10 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .lv0 { background: var(--l2-1); } .lv1 { background: var(--l2-2); } .lv2 { background: var(--l2-3); }
 .lv3 { background: var(--l2-4); } .lv4 { background: var(--l2-5); } .lv5 { background: var(--l2-6); }
 .book .lv0 { font-weight: 600; }
+/* Basic Level II: plain rows in the text color, like thinkorswim */
+.l2basic .book .r:not(.hd) { background: none; color: var(--fg); font-weight: 400; border-bottom-color: var(--grid); }
+.l2style { display: flex; margin: 0 4px 6px; }
+.l2style button { flex: 1; }
 .tape .r { grid-template-columns: 9ch minmax(0, 1fr) 7ch; border-bottom: 1px solid var(--grid); }
 .tape .buy { color: var(--ts-buy); } .tape .sell { color: var(--ts-sell); } .tape .mid { color: var(--ts-mid); }
 .tape .big { font-weight: 700; }
@@ -1884,6 +1888,7 @@ class Tile {
   get intraday() { return typeof TF[this.cell.tf] === 'number'; }
   paintSize() {
     if (this.cell.tsize > 0 && TEXT_KINDS.includes(this.kind)) this.el.style.setProperty('--tsize', this.cell.tsize); else this.el.style.removeProperty('--tsize');
+    this.el.classList.toggle('l2basic', this.cell.l2style === 'basic' && (this.kind === 'l2' || this.kind === 'lts'));
   }
   // Watchlist rows are built when the list changes; updateWatch() then fills in prices in place,
   // so a tap never lands on a row that was just replaced.
@@ -2537,7 +2542,7 @@ function tileMenu(anchor, t) {
       ${TEXT_KINDS.includes(t.kind) ? `<div class="tsz"><span>Text size</span><button data-z="-1" aria-label="Smaller text">A−</button><b>${Math.round((t.cell.tsize || 1) * 100)}%</b><button data-z="1" aria-label="Larger text">A+</button></div><hr>` : ''}
       ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
       ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button><button data-a="wpick"><span>Columns <small>add and remove</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
-        : `${t.kind === 'l2' || t.kind === 'lts' ? '<button data-a="l2cols"><span>Level II columns <small>MMID, size, cumulative</small></span></button>' : ''}<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
+        : `${t.kind === 'l2' || t.kind === 'lts' ? '<button data-a="l2cols"><span>Level II options <small>style and columns</small></span></button>' : ''}<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
       <hr>
       ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
@@ -2603,8 +2608,11 @@ function colsPop(anchor, t) {
 function l2ColsPop(anchor, t) {
   const row = (attr, label, note, on) => `<button ${attr}><span>${label} <small>${note}</small></span><span class="check ${on ? 'on' : ''}"></span></button>`;
   const on = () => l2colsOf(t.cell);
+  const basic = t.cell.l2style === 'basic';
   openPop(anchor, `
-    <h4>Level II columns</h4>
+    <h4>Level II style</h4>
+    <div class="seg l2style"><button data-st="color" aria-pressed="${!basic}">Colored <span class="lbl">(DAS)</span></button><button data-st="basic" aria-pressed="${basic}">Basic <span class="lbl">(thinkorswim)</span></button></div>
+    <h4>Columns</h4>
     <div class="menu">
       ${row('data-c="mm"', 'MMID', 'who is quoting', on().includes('mm'))}
       ${row('data-c="size"', 'Size', 'shares at that row', on().includes('size'))}
@@ -2613,6 +2621,11 @@ function l2ColsPop(anchor, t) {
       ${row('data-g="1"', 'Group by price', 'one row per price, sizes added up', !!t.cell.l2group)}
     </div>
     <p class="note">The price always shows.</p>`, p => {
+    p.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+      if (b.dataset.st === 'basic') t.cell.l2style = 'basic'; else delete t.cell.l2style;
+      p.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x === b));
+      save(); t.paintSize();
+    });
     p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
       const k = b.dataset.c, cur = on();
       t.cell.l2cols = Object.keys(L2COLS).filter(x => x === k ? !cur.includes(k) : cur.includes(x));
