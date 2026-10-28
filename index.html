@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Multichart">
 <meta name="theme-color" content="#050608">
+<!-- width=980 is what iPhone uses for pages without this tag, so the layout stays as it was;
+     viewport-fit=cover lets the page reach into the sides of the screen in landscape. -->
+<meta name="viewport" content="width=980, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -47,9 +50,14 @@ body {
   display: flex; flex-direction: column; overflow: hidden;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 0 8px;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 8px));
   -webkit-tap-highlight-color: transparent;
 }
+/* Phone in landscape: iPhone reserves the same margin on both sides, but the camera cutout is on
+   only one. Fill the other side, and come close to the cutout without going under it. */
+html.cut-left body { padding-left: max(16px, calc(env(safe-area-inset-left, 0px) - 10px)); padding-right: 20px; }
+html.cut-right body { padding-right: max(16px, calc(env(safe-area-inset-right, 0px) - 10px)); padding-left: 20px; }
 button, select, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -223,7 +231,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .menu button[aria-current="true"] { color: var(--accent); }
 .menu .danger { color: var(--down); }
 .menu small { color: var(--muted); font-size: 12px; }
-.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.menu hr, .pop .zin > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
 .check { width: 30px; height: 18px; border-radius: 99px; background: var(--line); position: relative; flex: none; }
 .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .check.on { background: var(--vwap); } .check.on::after { transform: translateX(12px); }
@@ -252,6 +260,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .tabs button[aria-current="true"] { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--head)); }
 .tabs button svg { width: 9px; height: 9px; }
 .tabs .addtab { padding: 0 10px; font-size: 15px; }
+/* tabs moved up into the top bar when it all fits on one line (the bar is already zoomed) */
+.bar > .tabs { zoom: 1; padding-bottom: 0; }
 .zoomctl { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; background: var(--head); }
 .zoomctl button { border: 0; background: none; height: 30px; padding: 0 10px; font-size: 16px; font-weight: 600; display: inline-flex; align-items: center; }
 .zoomctl button:hover:not(:disabled) { background: var(--hover); }
@@ -275,6 +285,14 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .hint span { overflow: hidden; text-overflow: ellipsis; }
 .hint button { border: 0; background: var(--head); border-radius: 99px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
 .tile.drawing .body { cursor: crosshair; }
+/* highlight to zoom */
+.tile.hlzoom .body { touch-action: none; }
+.hlband { position: absolute; top: 0; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 18%, transparent); border-inline: 1px solid var(--accent); }
+.zoomreset {
+  position: absolute; top: 6px; z-index: 5; height: calc(24px * var(--scale)); padding: 0 calc(9px * var(--scale)); border-radius: 6px;
+  border: 1px solid var(--line); background: var(--head); font-size: calc(12px * var(--scale)); font-weight: 600;
+}
+#settingsBtn .caret { width: 9px; height: 9px; color: var(--muted); }
 .bell { position: relative; }
 .badge {
   position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px;
@@ -357,24 +375,21 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
   <button class="feed" id="feedBtn" data-state="demo" aria-label="Data source"><i></i><span class="lbl">Demo data</span></button>
   <button class="btn primary" id="editBtn" aria-pressed="false">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
-    <span class="lbl">Edit layout</span>
+    <span class="lbl">Layout</span>
   </button>
   <div class="spacer"></div>
   <div class="seg" role="group" aria-label="Workspace mode">
     <button id="modeAll" aria-pressed="true">Full</button>
     <button id="modeCharts" aria-pressed="false">Charts<span class="lbl"> only</span></button>
   </div>
-  <button class="btn" id="layoutBtn" aria-label="Choose layout">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/></svg>
-    <span class="lbl">Layout</span>
-  </button>
   <button class="btn bell" id="alertsBtn" aria-label="Alerts">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 11V7a4 4 0 0 1 8 0v4l1.2 1.5H2.8zM6.5 14h3"/></svg>
     <span class="lbl">Alerts</span>
   </button>
-  <button class="btn" id="colorsBtn" aria-label="Colors">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a6.5 6.5 0 1 0 0 13c1 0 1.5-.6 1.5-1.3 0-.9-.8-1.2-.8-2 0-.7.6-1.2 1.3-1.2h1.6a2.9 2.9 0 0 0 2.9-2.9C14.5 4 11.6 1.5 8 1.5z"/><circle cx="4.8" cy="7" r=".9" fill="currentColor"/><circle cx="7.2" cy="4.4" r=".9" fill="currentColor"/><circle cx="10.4" cy="5" r=".9" fill="currentColor"/></svg>
-    <span class="lbl">Colors</span>
+  <button class="btn" id="settingsBtn" aria-label="Chart settings" aria-haspopup="true">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h6.5M12.5 4H14M2 8h1.5M7.5 8H14M2 12h8.5"/><circle cx="10.5" cy="4" r="1.6"/><circle cx="5.5" cy="8" r="1.6"/><circle cx="12.5" cy="12" r="1.6"/></svg>
+    <span class="lbl">Chart settings</span>
+    <svg class="caret" viewBox="0 0 10 10" fill="currentColor"><path d="M1.5 3h7L5 7.5z"/></svg>
   </button>
   <span class="zoomctl" id="zoomctl" role="group" aria-label="Zoom"></span>
 </header>
@@ -599,6 +614,7 @@ function setFeed(state, msg = '') {
   if (!el) return;
   el.dataset.state = state;
   el.querySelector('.lbl').textContent = { demo: 'Demo data', connecting: 'Connecting', live: 'Live · ' + SOURCE[dataCfg.mode], error: 'Data problem' }[state];
+  placeTabs();
   el.title = msg || { demo: 'Prices are simulated. Tap to connect live data.', connecting: 'Connecting', live: 'Live prices from ' + (dataCfg.mode === 'schwab' ? 'Schwab' : 'Alpaca (IEX)'), error: '' }[state];
   const sh = document.getElementById('sheet');
   if (!sh.hidden && sh.dataset.kind === 'data') paintDataStatus();
@@ -1012,6 +1028,28 @@ function candleColors() {
 }
 const tiles = new Map();
 let maxed = null;
+// How charts zoom: 'pinch' (pinch to zoom, drag to scroll) or 'highlight' (drag across a chart to zoom into it).
+const ZOOM_KEY = 'multichart-zoom-v1';
+let zoomMode = 'pinch';
+try { if (localStorage.getItem(ZOOM_KEY) === 'highlight') zoomMode = 'highlight'; } catch (e) {}
+function setZoomMode(m) {
+  zoomMode = m;
+  try { localStorage.setItem(ZOOM_KEY, m); } catch (e) {}
+  tiles.forEach(t => t.chart && t.applyZoomMode());
+}
+// The newest session from pre-market on; a day that has barely started brings the day before with it.
+function dayStart(list) {
+  const day = b => Math.floor(b.time / 86400);
+  let i = list.length - 1;
+  if (i < 0) return 0;
+  for (let pass = 0; pass < 2 && i > 0; pass++) {
+    const d = day(list[i]);
+    while (i > 0 && day(list[i - 1]) === d) i--;
+    if (list.length - i >= 30) break;
+    if (pass === 0) i--;
+  }
+  return Math.max(0, i);
+}
 
 // Gray bands behind pre-market and after-hours bars. It is a chart plugin, so the chart draws it
 // under the grid and candles. Color and opacity are set in Colors.
@@ -1084,7 +1122,7 @@ class Tile {
         autoSize: true,
         layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
         rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
-        timeScale: { rightOffset: 4 },
+        timeScale: { rightOffset: 4, minBarSpacing: 0.05 },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       });
       this.chart.applyOptions(chartColors());
@@ -1104,6 +1142,46 @@ class Tile {
         const r = body.getBoundingClientRect();
         this.onChartTap(e.clientX - r.left, e.clientY - r.top);
       }, true);
+      // Highlight to zoom: drag across the chart, and that stretch of time fills it.
+      const band = document.createElement('div'), reset = document.createElement('button');
+      band.className = 'hlband'; band.hidden = true;
+      reset.className = 'zoomreset'; reset.type = 'button'; reset.hidden = true;
+      reset.addEventListener('click', () => { this.fitView(); });
+      body.append(band, reset);
+      let hl = null;
+      const paneX = e => { const r = body.getBoundingClientRect(); return Math.max(0, Math.min(this.chart.timeScale().width(), e.clientX - r.left)); };
+      body.addEventListener('pointerdown', e => {
+        if (hl) { hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
+        if (zoomMode !== 'highlight' || this.mode || e.button > 0 || e.target.closest('.hint, .zoomreset')) return;
+        if (e.clientX - body.getBoundingClientRect().left > this.chart.timeScale().width()) return;  // on the price scale
+        hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e) };
+        band.style.height = (body.clientHeight - this.chart.timeScale().height()) + 'px';
+      }, true);
+      body.addEventListener('pointermove', e => {
+        if (!hl || e.pointerId !== hl.id) return;
+        hl.x1 = paneX(e);
+        const w = Math.abs(hl.x1 - hl.x0);
+        band.hidden = w < 6;
+        band.style.left = Math.min(hl.x0, hl.x1) + 'px'; band.style.width = w + 'px';
+      }, true);
+      const endHl = e => {
+        if (!hl || e.pointerId !== hl.id) return;
+        const { x0, x1 } = hl;
+        hl = null; band.hidden = true;
+        if (e.type !== 'pointerup' || Math.abs(x1 - x0) < 12) return;
+        const ts = this.chart.timeScale(), a = ts.coordinateToLogical(Math.min(x0, x1)), b = ts.coordinateToLogical(Math.max(x0, x1));
+        if (a == null || b == null) return;
+        ts.setVisibleLogicalRange({ from: a, to: b });
+        this.showReset();
+      };
+      body.addEventListener('pointerup', endHl, true);
+      body.addEventListener('pointercancel', endHl, true);
+      // Touching or scrolling the chart hands the view over to you.
+      body.addEventListener('pointerdown', () => { this.autoFit = false; }, true);
+      body.addEventListener('wheel', () => { this.autoFit = false; }, { capture: true, passive: true });
+      // The plot area changes width when the panel resizes or the price labels grow or shrink.
+      this.chart.timeScale().subscribeSizeChange(() => { if (this.autoFit && this.list) this.refit(); });
+      this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
     } else {
@@ -1112,6 +1190,30 @@ class Tile {
     this.load();
   }
   get intraday() { return typeof TF[this.cell.tf] === 'number'; }
+  applyZoomMode() {
+    const hl = zoomMode === 'highlight';
+    this.el.classList.toggle('hlzoom', hl);
+    this.chart.applyOptions({ handleScroll: { pressedMouseMove: !hl, horzTouchDrag: !hl, vertTouchDrag: !hl } });
+    if (!hl) this.$('.zoomreset').hidden = true;
+  }
+  showReset() {
+    const b = this.$('.zoomreset');
+    b.textContent = this.intraday ? 'Whole day' : 'Reset zoom';
+    b.style.right = (this.chart.priceScale('right').width() + 6) + 'px';
+    b.hidden = false;
+  }
+  // Intraday charts open on the whole day (pre-market on), daily and weekly on the last 150 bars.
+  // Until you scroll or zoom, the view keeps that framing as bars arrive and the panel resizes.
+  fitView() {
+    this.autoFit = true;
+    this.$('.zoomreset').hidden = true;
+    this.refit();
+    requestAnimationFrame(() => requestAnimationFrame(() => this.autoFit && this.refit()));
+  }
+  refit() {
+    const n = this.fitN = this.list.length, from = this.intraday ? dayStart(this.list) : n - 150;
+    this.chart.timeScale().setVisibleLogicalRange({ from: from - 0.2, to: n + 4 });
+  }
   get showVwap() { return this.cell.vwap && this.intraday; }
   volData(list) {
     const up = css('--up') + '99', down = css('--down') + '99';
@@ -1146,8 +1248,7 @@ class Tile {
       this.vw.setData(this.showVwap ? vwap(list) : []);
       this.chart.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } });
       if (!keepView) {
-        const n = list.length, fit = () => this.chart.timeScale().setVisibleLogicalRange({ from: n - 150, to: n + 4 });
-        fit(); requestAnimationFrame(() => requestAnimationFrame(fit));
+        this.fitView();
         this.setMode(null);
       }
       this.syncLines();
@@ -1165,6 +1266,7 @@ class Tile {
     if (this.kind === 'chart') {
       const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
       if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); }
+      if (this.autoFit && list.length !== this.fitN) this.refit();
       const lg = this.$('.legend');
       if (this.showVwap && lb) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
       else lg.innerHTML = '';
@@ -1450,7 +1552,7 @@ function render() {
   grid.classList.toggle('editing', editing);
   const eb = document.getElementById('editBtn');
   eb.setAttribute('aria-pressed', String(editing));
-  eb.querySelector('.lbl').textContent = editing ? 'Done' : 'Edit layout';
+  eb.querySelector('.lbl').textContent = editing ? 'Done' : 'Layout';
   renderTabs();
   document.getElementById('modeAll').setAttribute('aria-pressed', String(!state.chartsOnly));
   document.getElementById('modeCharts').setAttribute('aria-pressed', String(state.chartsOnly));
@@ -1614,9 +1716,10 @@ function symbolPop(anchor, t) {
   });
 }
 
-document.getElementById('layoutBtn').addEventListener('click', e => {
+function layoutPop(anchor) {
   const cls = { c: '', l: 'l', t: 't' };
-  openPop(e.currentTarget, `
+  closePop();
+  openPop(anchor, `
     <h4>Layout</h4>
     <div class="presets">${PRESETS.map((shape, i) => `<button class="preset" data-i="${i}" aria-label="Layout ${i + 1}">${shape.map(code => `<div style="flex:${code.includes('c') ? 2 : 1}">${[...code].map(ch => `<span class="${cls[ch]}"></span>`).join('')}</div>`).join('')}</button>`).join('')}</div>
     <p class="note">Grey is a chart, yellow is Level II, dark grey is Time & Sales.</p>
@@ -1624,7 +1727,7 @@ document.getElementById('layoutBtn').addEventListener('click', e => {
     ${savedLayouts.length ? `<div class="saved">${savedLayouts.map((l, i) => `<div class="srow"><button data-load="${i}">${esc(l.name)}</button><button data-del="${i}" aria-label="Delete ${esc(l.name)}">✕</button></div>`).join('')}</div>` : '<p class="empty">No saved layouts yet.</p>'}
     <form class="symform" id="saveLayout"><input id="layoutName" maxlength="40" placeholder="Name this layout" aria-label="Layout name" style="text-transform:none;font-family:var(--ui);font-weight:500"><button class="btn primary" type="submit">Save</button></form>`, p => {
     p.querySelectorAll('[data-load]').forEach(b => b.onclick = () => { loadLayout(savedLayouts[+b.dataset.load]); closePop(); });
-    p.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { savedLayouts.splice(+b.dataset.del, 1); persistSaved(); closePop(); document.getElementById('layoutBtn').click(); });
+    p.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { savedLayouts.splice(+b.dataset.del, 1); persistSaved(); layoutPop(anchor); });
     p.querySelector('#saveLayout').onsubmit = e => {
       e.preventDefault();
       const name = p.querySelector('#layoutName').value.trim();
@@ -1643,6 +1746,29 @@ document.getElementById('layoutBtn').addEventListener('click', e => {
       render(); closePop();
     });
   });
+}
+// Chart settings: how charts zoom, plus Layout and Colors.
+document.getElementById('settingsBtn').addEventListener('click', e => {
+  const anchor = e.currentTarget;
+  openPop(anchor, `
+    <h4>Zoom</h4>
+    <div class="menu">
+      <button data-zoom="pinch" aria-current="${zoomMode === 'pinch'}"><span>Pinch to zoom <small>drag to scroll</small></span><span class="check ${zoomMode === 'pinch' ? 'on' : ''}"></span></button>
+      <button data-zoom="highlight" aria-current="${zoomMode === 'highlight'}"><span>Highlight to zoom <small>drag across a chart</small></span><span class="check ${zoomMode === 'highlight' ? 'on' : ''}"></span></button>
+    </div>
+    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
+    <hr>
+    <div class="menu">
+      <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
+      <button data-a="colors"><span>Colors</span></button>
+    </div>`, p => {
+    p.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
+      setZoomMode(b.dataset.zoom); closePop();
+      toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
+    });
+    p.querySelector('[data-a=layout]').onclick = () => layoutPop(anchor);
+    p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
+  });
 });
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
 document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; render(); });
@@ -1659,7 +1785,24 @@ function renderTabs() {
   });
   nav.querySelector('#addTab').onclick = () => newTab();
   renderZoom();
+  placeTabs();
 }
+// Tabs ride in the top bar, after the Layout (edit) button, when everything fits on one line there;
+// otherwise they get their own row below it.
+function placeTabs() {
+  const nav = document.getElementById('tabs'), bar = document.querySelector('.bar');
+  if (!nav || !bar) return;
+  const oneLine = () => {
+    const rs = [...bar.children].map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
+    return rs.every(a => rs.every(b => a.top < b.bottom));
+  };
+  if (nav.parentNode === bar) bar.after(nav);
+  if (!oneLine()) return;
+  bar.insertBefore(nav, bar.querySelector('.spacer'));
+  if (!oneLine()) bar.after(nav);
+}
+let placeQueued = false;
+addEventListener('resize', () => { if (!placeQueued) { placeQueued = true; requestAnimationFrame(() => { placeQueued = false; placeTabs(); }); } });
 function renderZoom() {
   const z = document.getElementById('zoomctl');
   z.innerHTML = `<button id="zoomOut" aria-label="Zoom out" ${uiScale() <= ZMIN + 0.001 ? 'disabled' : ''}>−</button><button class="zlabel" id="zoomLabel" title="Tap to fit this screen automatically">${scalePref === 'auto' ? 'Auto' : Math.round(uiScale() * 100) + '%'}</button><button id="zoomIn" aria-label="Zoom in" ${uiScale() >= ZMAX - 0.001 ? 'disabled' : ''}>+</button>`;
@@ -1934,7 +2077,6 @@ function openColors() {
   sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName], extAlpha: colors.extAlpha }; applyColors(); openColors(); });
   sheet.querySelector('#resetColors').onclick = () => { colors = {}; applyColors(); openColors(); };
 }
-document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden || sheet.dataset.kind !== 'colors') openColors(); else sheet.hidden = true; });
 
 const CLOSE_X = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
 function paintDataStatus() {
@@ -2123,6 +2265,17 @@ applyColors();
 document.documentElement.style.setProperty('--scale', uiScale());
 
 /* ---------- go ---------- */
+// Which side the camera cutout is on: the top of the phone points left at 90 degrees, right at 270.
+function markCutout() {
+  const a = screen.orientation ? screen.orientation.angle : (window.orientation || 0);
+  const root = document.documentElement;
+  root.classList.toggle('cut-left', a === 90);
+  root.classList.toggle('cut-right', a === 270 || a === -90);
+}
+markCutout();
+if (screen.orientation) screen.orientation.addEventListener('change', markCutout);
+window.addEventListener('orientationchange', markCutout);
+window.addEventListener('resize', markCutout);
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();
