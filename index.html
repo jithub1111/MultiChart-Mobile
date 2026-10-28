@@ -47,8 +47,8 @@ button { cursor: pointer; }
 
 /* top bar */
 .bar { display: flex; align-items: center; gap: 8px; padding-block: 8px; min-width: 0; }
-/* at high zoom on a small screen the bar scrolls sideways instead of cutting off buttons */
-.bar { overflow-x: auto; scrollbar-width: none; } .bar::-webkit-scrollbar { display: none; } .bar > * { flex-shrink: 0; }
+/* when the buttons no longer fit, they wrap onto a second line, lined up on the right under Colors */
+.bar { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; } .bar > * { flex-shrink: 0; }
 .brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; }
 .brand span { color: var(--accent); }
 .feed {
