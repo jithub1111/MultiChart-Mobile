@@ -6,7 +6,8 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 
 - **Layout** (pencil) button for edit mode: tap the + on any side of a panel to add a chart, Level II or Time & Sales there, or remove and change panels
 - Resize panels by dragging the bars between them
-- Panel types: **Chart**, **Level II**, **Time & Sales**, and **Level II + T&S** (both side by side in one box)
+- Panel types: **Chart**, **Level II**, **Time & Sales**, **Level II + T&S** (both side by side in one box), and **Fundamentals**
+- **Fundamentals** panel with four tabs: **News** (Yahoo Finance and Google News merged, repeats removed, newest first), **Key statistics** (from Schwab), **Company profile** and **SEC filings** (from the SEC's EDGAR site, with filters for reports, 8-Ks, insider trades, big holders and offerings). Needs the Schwab helper
 - On a phone or tablet the layout turns with the screen: 2 across by 4 down in portrait becomes 4 across by 2 down in landscape, and Level II stays next to its Time & Sales. Each tab remembers its sizes for each orientation. Turn it off in Chart settings
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides the Level II and Time & Sales panels
@@ -33,6 +34,7 @@ Cloudflare Workers. The helper keeps your Schwab app keys and your sign-in, so t
 - **Last price and bid/ask**: real time
 - **Level II**: real Nasdaq and NYSE order books
 - **Time & Sales**: built from Schwab's last-trade updates (Schwab offers no full tape feed, so busy stocks show fewer prints than thinkorswim)
+- **Fundamentals**: key statistics come from Schwab. The helper also fetches news from Yahoo Finance and Google News, company details and filings from the SEC, and a short company description from Wikipedia, since a web page can't read those sites directly
 - Schwab asks you to sign in again every 7 days. The app reminds you a day ahead
 
 ### Setting up the Schwab helper

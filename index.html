@@ -217,6 +217,39 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
   .tape .r { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; padding: 2px 4px; font-size: 11px; }
 }
 
+/* Fundamentals panel */
+.fund { position: absolute; inset: 0; display: flex; flex-direction: column; font-size: 13px; }
+.ftabs { display: flex; gap: 2px; padding: 4px; background: var(--head); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
+.ftabs button { flex: none; border: 0; background: none; color: var(--muted); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 5px; white-space: nowrap; }
+.ftabs button[aria-current="true"] { background: var(--hover); color: var(--fg); }
+.ftabs .short { display: none; }
+@container (max-width: 400px) { .ftabs .long { display: none; } .ftabs .short { display: inline; } }
+.fbody { flex: 1; min-height: 0; overflow: auto; }
+.fnote { margin: 0; padding: 12px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.fnote.err { color: var(--fg); }
+.fnote a, .fdesc a { color: var(--accent); }
+.nitem { display: block; padding: 8px 10px; border-bottom: 1px solid var(--grid); color: var(--fg); text-decoration: none; }
+.nitem:hover { background: var(--hover); }
+.nitem.fresh { box-shadow: inset 3px 0 var(--accent); }
+.nitem b { display: block; font-weight: 500; line-height: 1.3; }
+.nitem small, .frow small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.fstats { columns: 2 230px; column-gap: 16px; padding: 4px 10px 10px; }
+.fgroup { break-inside: avoid; padding-top: 6px; }
+.fgroup h5, .fprof h5 { margin: 4px 0; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; margin: 0; font-size: 12px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.fprof { padding: 6px 10px 10px; }
+.fprof p { margin: 4px 0 10px; line-height: 1.45; }
+.fprof .kv dd { font-family: var(--ui); overflow-wrap: anywhere; }
+.fchips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.fchips button { border: 1px solid var(--line); background: none; color: var(--muted); font-size: 11px; padding: 3px 8px; border-radius: 99px; }
+.fchips button[aria-current="true"] { border-color: var(--accent); color: var(--fg); }
+.frow { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 6px 10px; border-bottom: 1px solid var(--grid); color: var(--fg); text-decoration: none; }
+.frow:hover { background: var(--hover); }
+.frow .form { font-family: var(--num); font-weight: 600; color: var(--accent); overflow-wrap: anywhere; }
+.frow .fdate { color: var(--muted); font-size: 11px; font-family: var(--num); white-space: nowrap; }
+
 /* popover */
 .pop {
   position: fixed; z-index: 50; background: var(--pop); border: 1px solid var(--line); border-radius: 10px;
@@ -276,7 +309,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 }
 
 /* app zoom: scale the interface text and controls; chart canvases stay at native size and scale their own text */
-.bar, .tabs, .th, .tbl, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
+.bar, .tabs, .th, .tbl, .fund, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
 
 /* drawings, alerts, saved layouts */
 .draw-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; width: 100%; height: 100%; }
@@ -1017,7 +1050,7 @@ const ICON = {
   more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>',
   draw: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 13.5l11-9"/><circle cx="2.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="4.5" r="1.3" fill="currentColor"/><path d="M1.5 8h4M10.5 12h4" stroke-dasharray="1.5 1.5"/></svg>'
 };
-const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S' };
+const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S', fund: 'Fundamentals' };
 function chartColors() {
   const muted = css('--muted'), line = css('--line'), grid = css('--grid');
   return {
@@ -1093,6 +1126,158 @@ class SessionShade {
       }
     });
   }
+}
+
+/* ---------- Fundamentals panel ---------- */
+// News, key statistics, company profile and SEC filings for the panel's symbol, all fetched
+// through the Schwab helper (Schwab for the numbers, Yahoo Finance and Google News for news,
+// the SEC for the profile and filings).
+const FUND_TABS = { news: 'News', stats: 'Key statistics', profile: 'Company profile', filings: 'SEC filings' };
+const FUND_SHORT = { news: 'News', stats: 'Stats', profile: 'Profile', filings: 'Filings' };
+const FUND_TTL = { news: 3 * 60e3, stats: 10 * 60e3, company: 30 * 60e3 };
+const fundCache = new Map();
+function fundData(part, sym) {
+  const k = part + ':' + sym, old = fundCache.get(k);
+  if (old && (old.wait || Date.now() - old.at < (old.error ? 60e3 : FUND_TTL[part]))) return old;
+  // Keep showing the last answer while a fresh one loads.
+  const c = { at: Date.now(), data: old && old.data, error: null };
+  c.wait = fetchFund(part, sym)
+    .then(d => { c.data = d; }, e => { c.error = e.message; })
+    .finally(() => { c.wait = null; c.at = Date.now(); tiles.forEach(t => t.kind === 'fund' && t.cell.sym === sym && t.paintFund()); });
+  fundCache.set(k, c);
+  return c;
+}
+async function fetchFund(part, sym) {
+  if (!dataCfg.helper || !dataCfg.pass) throw new Error('This panel gets its data through your Schwab helper. Add the helper address and app password in Data source.');
+  const q = encodeURIComponent(sym);
+  try {
+    if (part === 'stats') {
+      const [i, qt] = await Promise.allSettled([helper(`/instruments?symbol=${q}&projection=fundamental`), helper(`/quotes?symbols=${q}&fields=quote,fundamental,reference`)]);
+      if (i.status === 'rejected' && qt.status === 'rejected') throw i.reason;
+      const inst = (i.status === 'fulfilled' && (i.value.instruments || [])[0]) || {}, qq = (qt.status === 'fulfilled' && qt.value[sym]) || {};
+      return { name: inst.description || (qq.reference && qq.reference.description) || '', exchange: inst.exchange || (qq.reference && qq.reference.exchangeName) || '', cusip: inst.cusip || '', f: inst.fundamental || {}, qf: qq.fundamental || {}, quote: qq.quote || {} };
+    }
+    if (part === 'news') {
+      // The company name widens the news search, so look it up first when it's quick to get.
+      const st = fundData('stats', sym);
+      if (st.wait) await st.wait;
+      const name = (st.data && st.data.name) || NAMES[sym] || '';
+      return await helper(`/news?symbol=${q}&name=${encodeURIComponent(name)}`);
+    }
+    return await helper(`/company?symbol=${q}`);
+  } catch (e) {
+    if (e.code === 'notfound') throw new Error('Your Schwab helper needs its latest update for this panel. It installs itself a minute or two after this change is merged.');
+    throw e;
+  }
+}
+const fNum = (v, d = 2) => v == null || v === '' || !isFinite(v) || +v === 0 ? null : (+v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fPct = v => fNum(v) && fNum(v) + '%';
+const fBig = v => {
+  if (!v || !isFinite(v)) return null;
+  const a = Math.abs(v);
+  return a >= 1e12 ? (v / 1e12).toFixed(2) + 'T' : a >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : a >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : a >= 1e4 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v).toLocaleString();
+};
+const fDay = v => {
+  const t = Date.parse(String(v || '').slice(0, 10));
+  return isNaN(t) || new Date(t).getUTCFullYear() < 1990 ? null : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+};
+const fAgo = t => {
+  const m = (Date.now() - t) / 60e3;
+  if (m < 1) return 'just now';
+  if (m < 60) return Math.floor(m) + 'm ago';
+  if (m < 24 * 60) return Math.floor(m / 60) + 'h ago';
+  const d = new Date(t);
+  return d.toLocaleDateString('en-US', d.getFullYear() === new Date().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+};
+const kvList = rows => `<dl class="kv">${rows.filter(r => r[1]).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+const safeUrl = u => /^https?:\/\//i.test(u || '') ? esc(u) : '';
+
+function newsView(d) {
+  const items = (d.items || []).filter(i => safeUrl(i.link)), f = d.feeds || {}, down = [['yahoo', 'Yahoo Finance'], ['google', 'Google News']].filter(([k]) => typeof f[k] === 'string').map(([, n]) => n);
+  const note = down.length ? `<p class="fnote">${down.join(' and ')} didn't answer this time, so some stories may be missing.</p>` : '';
+  if (!items.length) return note + '<p class="fnote">No news in the last two weeks.</p>';
+  return note + items.map(i => `<a class="nitem${Date.now() - i.time < 3600e3 ? ' fresh' : ''}" href="${safeUrl(i.link)}" target="_blank" rel="noopener"><b>${esc(i.title)}</b><small>${esc(i.source || '')}${i.time ? ' · ' + fAgo(i.time) : ''}</small></a>`).join('') +
+    '<p class="fnote">Headlines from Yahoo Finance and Google News, newest first. A blue edge marks the last hour.</p>';
+}
+function statsView(d, sym) {
+  const f = d.f || {}, qf = d.qf || {}, qt = d.quote || {};
+  const s = store(sym), px = (ready(s) && last(s)) || qt.lastPrice || qt.closePrice;
+  const shares = +f.sharesOutstanding || 0;
+  // Schwab gives market cap and float in millions.
+  const cap = shares && px ? shares * px : f.marketCap ? f.marketCap * 1e6 : 0;
+  const flt = f.marketCapFloat ? (shares && f.marketCapFloat * 1e6 > shares * 1.5 ? f.marketCapFloat : f.marketCapFloat * 1e6) : 0;
+  const groups = [
+    ['Price and volume', [['52-week high', fNum(f.high52 || qt['52WeekHigh'])], ['52-week low', fNum(f.low52 || qt['52WeekLow'])],
+      ['Avg volume, 10 days', fBig(f.avg10DaysVolume || f.vol10DayAvg || qf.avg10DaysVolume)], ['Avg volume, 3 months', fBig(f.avg3MonthVolume || f.vol3MonthAvg)],
+      ['Avg volume, 1 year', fBig(qf.avg1YearVolume)], ['Beta', fNum(f.beta)]]],
+    ['Valuation', [['Market cap', cap && '$' + fBig(cap)], ['Shares outstanding', fBig(shares)], ['Float', fBig(flt)], ['P/E', fNum(f.peRatio || qf.peRatio)],
+      ['PEG', fNum(f.pegRatio)], ['Price/book', fNum(f.pbRatio)], ['Price/sales', fNum(f.prRatio)], ['Price/cash flow', fNum(f.pcfRatio)]]],
+    ['Earnings', [['EPS (TTM)', fNum(f.epsTTM || f.eps || qf.eps)], ['EPS change (TTM)', fPct(f.epsChangePercentTTM)], ['Revenue change (TTM)', fPct(f.revChangeTTM)],
+      ['Book value per share', fNum(f.bookValuePerShare)], ['Last earnings', fDay(qf.lastEarningsDate)]]],
+    ['Margins and returns', [['Gross margin', fPct(f.grossMarginTTM)], ['Operating margin', fPct(f.operatingMarginTTM)], ['Net margin', fPct(f.netMarginTTM || f.netProfitMarginTTM)],
+      ['Return on equity', fPct(f.returnOnEquity)], ['Return on assets', fPct(f.returnOnAssets)]]],
+    ['Balance sheet', [['Current ratio', fNum(f.currentRatio)], ['Quick ratio', fNum(f.quickRatio)], ['Debt/equity', fNum(f.totalDebtToEquity)], ['Interest coverage', fNum(f.interestCoverage)]]],
+    ['Short interest', [['Short % of float', fPct(f.shortIntToFloat)], ['Days to cover', fNum(f.shortIntDayToCover)]]],
+    ['Dividends', [['Yield', fPct(f.dividendYield || qf.divYield)], ['Yearly amount', fNum(f.dividendAmount || qf.divAmount)],
+      ['Ex-dividend date', fDay(f.nextDividendDate || qf.nextDivExDate || f.dividendDate || qf.divExDate)], ['Pay date', fDay(f.nextDividendPayDate || qf.nextDivPayDate || f.dividendPayDate)]]]
+  ].filter(([, rows]) => rows.some(r => r[1]));
+  if (!groups.length) return `<p class="fnote">Schwab has no key statistics for ${esc(sym)}.</p>`;
+  return `<div class="fstats">${groups.map(([h, rows]) => `<div class="fgroup"><h5>${h}</h5>${kvList(rows)}</div>`).join('')}</div><p class="fnote">From Schwab.</p>`;
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const capsToTitle = t => String(t || '').replace(/\b([A-Z])([A-Z']{2,})\b/g, (m, a, b) => a + b.toLowerCase());
+function profileView(c, st, sym) {
+  st = st || {};
+  if (!c.cik) {
+    const rows = [['Name', esc(st.name)], ['Exchange', esc(st.exchange)], ['CUSIP', esc(st.cusip)]];
+    return `<div class="fprof"><p class="fnote" style="padding:0">${esc(sym)} doesn't file with the SEC. That's common for Canadian and other foreign companies that trade over the counter.</p>${kvList(rows)}</div>`;
+  }
+  const fye = c.fiscalYearEnd && MONTHS[+c.fiscalYearEnd.slice(0, 2) - 1] ? MONTHS[+c.fiscalYearEnd.slice(0, 2) - 1] + ' ' + +c.fiscalYearEnd.slice(2) : '';
+  const site = safeUrl(c.website && !/^https?:/i.test(c.website) ? 'https://' + c.website : c.website);
+  const others = (c.tickers || []).filter(t => t !== sym).join(', ');
+  const rows = [
+    ['Name', esc(c.name || st.name)], ['Exchange', esc((c.exchanges || []).filter(Boolean).join(', ') || st.exchange)], ['Industry', esc(capsToTitle(c.industry))],
+    ['Headquarters', esc(capsToTitle(c.address))], ['Phone', esc(c.phone)], ['Website', site && `<a href="${site}" target="_blank" rel="noopener">${esc(c.website.replace(/^https?:\/\/(www\.)?/i, ''))}</a>`],
+    ['Incorporated in', esc(c.incorporated)], ['Fiscal year ends', fye], ['SEC filer type', esc(c.category)], ['Other share classes', esc(others)],
+    ['Formerly', esc((c.formerNames || []).map(capsToTitle).join('; '))], ['CUSIP', esc(st.cusip)], ['SEC number (CIK)', esc(c.cik)]
+  ];
+  const about = c.wiki ? `<p>${esc(c.wiki.text)} <a href="${safeUrl(c.wiki.url)}" target="_blank" rel="noopener">Wikipedia</a></p>` : c.description ? `<p>${esc(c.description)}</p>` : '';
+  return `<div class="fprof">${about ? '<h5>About</h5>' + about : ''}<h5>Details</h5>${kvList(rows)}</div>`;
+}
+const FORM_NAMES = {
+  '10-K': 'Annual report', '10-Q': 'Quarterly report', '8-K': 'Current report', '6-K': 'Foreign company report', '20-F': 'Foreign annual report', '40-F': 'Canadian annual report',
+  '3': 'New insider', '4': 'Insider buy or sell', '5': 'Insider yearly summary', '144': 'Planned insider sale',
+  'S-1': 'Registering new shares', 'F-1': 'Registering new shares', 'S-3': 'Shelf registration (can sell shares later)', 'F-3': 'Shelf registration (can sell shares later)',
+  'S-8': 'Shares for employee plans', 'S-4': 'Merger registration', 'FWP': 'Offering material', 'EFFECT': 'Registration took effect',
+  'DEF 14A': 'Proxy statement', 'DEFA14A': 'More proxy material', 'PRE 14A': 'Draft proxy statement', 'ARS': 'Annual report to shareholders',
+  'SC 13G': 'Passive 5%+ holder', 'SCHEDULE 13G': 'Passive 5%+ holder', 'SC 13D': 'Active 5%+ holder', 'SCHEDULE 13D': 'Active 5%+ holder',
+  'NT 10-K': 'Late annual report notice', 'NT 10-Q': 'Late quarterly report notice', '25-NSE': 'Delisting', 'SC TO-T': 'Tender offer', 'CORRESP': 'Letter to the SEC', 'UPLOAD': 'Letter from the SEC'
+};
+const ITEMS_8K = {
+  '1.01': 'Material agreement', '1.02': 'Agreement ended', '1.03': 'Bankruptcy', '2.01': 'Bought or sold assets', '2.02': 'Earnings results', '2.03': 'New debt',
+  '2.05': 'Restructuring', '2.06': 'Impairment', '3.01': 'Listing standards notice', '3.02': 'Unregistered share sale', '3.03': 'Shareholder rights change',
+  '4.01': 'Auditor change', '4.02': 'Past results unreliable', '5.01': 'Change in control', '5.02': 'Officer or director change', '5.03': 'Bylaws change',
+  '5.07': 'Shareholder vote results', '7.01': 'Investor presentation or update', '8.01': 'Other news'
+};
+const FILING_FILTERS = {
+  all: ['All', () => true],
+  reports: ['Reports', f => /^(10-K|10-Q|20-F|40-F|6-K|10-KT|ARS|NT 10)/.test(f)],
+  current: ['8-K', f => /^8-K/.test(f)],
+  insider: ['Insider', f => /^(3|4|5|144)(\/A)?$/.test(f)],
+  holders: ['Big holders', f => /^(SC 13[DG]|SCHEDULE 13[DG])/.test(f)],
+  offerings: ['Offerings', f => /^(S-1|S-3|F-1|F-3|S-8|424B|FWP|EFFECT)/.test(f)]
+};
+function filingsView(c, sym, filter) {
+  if (!c.cik) return `<p class="fnote">${esc(sym)} doesn't file with the SEC. That's common for Canadian and other foreign companies that trade over the counter.</p>`;
+  const key = FILING_FILTERS[filter] ? filter : 'all', keep = FILING_FILTERS[key][1];
+  const chips = `<div class="fchips">${Object.entries(FILING_FILTERS).map(([k, [label]]) => `<button data-ff="${k}" aria-current="${k === key}">${label}</button>`).join('')}</div>`;
+  const rows = (c.filings || []).filter(x => keep(x.form)).map(x => {
+    const base = x.form.replace(/\/A$/, ''), amended = base !== x.form ? ' (amended)' : '';
+    const what = (FORM_NAMES[base] || (/^424B/.test(base) ? 'Offering prospectus' : capsToTitle(x.desc) || base)) + amended;
+    const items = /^8-K/.test(base) && x.items ? x.items.split(',').map(i => ITEMS_8K[i.trim()]).filter(Boolean).join(', ') : '';
+    return `<a class="frow" href="${safeUrl(x.url)}" target="_blank" rel="noopener"><span class="form">${esc(x.form)}</span><span class="fdesc">${esc(what)}${items ? `<small>${esc(items)}</small>` : ''}</span><span class="fdate">${esc(fDay(x.date) || x.date)}</span></a>`;
+  }).join('');
+  return chips + (rows || '<p class="fnote">No recent filings of this kind.</p>') + `<p class="fnote">The latest filings from the SEC's EDGAR site. Tap one to open it.</p>`;
 }
 
 function bookHtml(s, d) {
@@ -1246,6 +1431,17 @@ class Tile {
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
+    } else if (this.kind === 'fund') {
+      this.$('.body').innerHTML = `<div class="fund"><nav class="ftabs">${Object.entries(FUND_TABS).map(([k, l]) => `<button data-t="${k}"><span class="long">${l}</span><span class="short">${FUND_SHORT[k]}</span></button>`).join('')}</nav><div class="fbody"></div></div><div class="msg" hidden></div>`;
+      this.$('.ftabs').addEventListener('click', e => {
+        const b = e.target.closest('[data-t]');
+        if (!b) return;
+        this.cell.ftab = b.dataset.t; save(); this.paintFund();
+      });
+      this.$('.fbody').addEventListener('click', e => {
+        const b = e.target.closest('[data-ff]');
+        if (b) { this.cell.ffilter = b.dataset.ff; save(); this.paintFund(); }
+      });
     } else {
       // The Level II + T&S box shows both side by side for one symbol.
       this.$('.body').innerHTML = (this.kind === 'lts' ? '<div class="duo"><div class="tbl"></div><div class="tbl"></div></div>' : '<div class="tbl"></div>') + '<div class="msg" hidden></div>';
@@ -1253,6 +1449,20 @@ class Tile {
     this.load();
   }
   get intraday() { return typeof TF[this.cell.tf] === 'number'; }
+  paintFund() {
+    const sym = this.cell.sym, tab = FUND_TABS[this.cell.ftab] ? this.cell.ftab : 'news', body = this.$('.fbody');
+    this.$('.ftabs').querySelectorAll('[data-t]').forEach(b => b.setAttribute('aria-current', String(b.dataset.t === tab)));
+    const main = fundData(tab === 'news' ? 'news' : tab === 'stats' ? 'stats' : 'company', sym);
+    const extra = tab === 'profile' ? fundData('stats', sym).data : null;
+    const html = main.data ? (tab === 'news' ? newsView(main.data) : tab === 'stats' ? statsView(main.data, sym) : tab === 'profile' ? profileView(main.data, extra, sym) : filingsView(main.data, sym, this.cell.ffilter))
+      : main.error ? `<p class="fnote err">${esc(main.error)}</p>` : `<p class="fnote">Loading ${FUND_TABS[tab].toLowerCase()} for ${esc(sym)}…</p>`;
+    if (html === this.fundHtml) return;
+    // Refreshing the same list keeps your place in it.
+    const same = this.fundKey === tab + sym, top = body.scrollTop;
+    body.innerHTML = this.fundHtml = html;
+    body.scrollTop = same ? top : 0;
+    this.fundKey = tab + sym;
+  }
   applyZoomMode() {
     const hl = zoomMode === 'highlight';
     this.el.classList.toggle('hlzoom', hl);
@@ -1301,7 +1511,8 @@ class Tile {
     lk.classList.toggle('on', !!g);
     lk.style.background = g ? LINK_COLORS[g] : '';
     const s = store(sym), msg = this.$('.msg');
-    msg.hidden = ready(s);
+    if (this.kind === 'fund') this.paintFund();
+    msg.hidden = ready(s) || this.kind === 'fund';
     msg.textContent = s.error || `Loading ${sym}…`;
     msg.classList.toggle('err', !!s.error);
     if (!ready(s)) {
@@ -1348,7 +1559,7 @@ class Tile {
       else lg.innerHTML = '';
       this.watermark();
       this.paintDrawings();
-    } else {
+    } else if (this.kind !== 'fund') {
       const [a, b] = this.el.querySelectorAll('.tbl');
       if (this.kind === 'ts') a.innerHTML = tapeHtml(s, d);
       else { a.innerHTML = bookHtml(s, d); if (b) b.innerHTML = tapeHtml(s, d); }
@@ -1533,7 +1744,7 @@ function normalize(n) {
 }
 
 function fromPreset(shape) {
-  const pool = { chart: [], l2: [], ts: [], lts: [] };
+  const pool = Object.fromEntries(Object.keys(KINDS).map(k => [k, []]));
   allCells().forEach(c => pool[c.kind].push(c));
   let ci = 0;
   const rows = shape.map(code => [...code].map(ch => {
@@ -1967,7 +2178,7 @@ function turn(n) {
   kids = kids.map(turn);
   kids.forEach(k => {
     const cells = leaves(k);
-    k.size = cells.some(c => c.kind === 'chart') || (dir === 'h' && (isPair(k) || cells.some(c => c.kind === 'lts'))) ? 1 : 0.6;
+    k.size = cells.some(c => c.kind === 'chart') || (dir === 'h' && (isPair(k) || cells.some(c => c.kind === 'lts' || c.kind === 'fund'))) ? 1 : 0.6;
   });
   return { dir, size: n.size, children: kids };
 }
@@ -2451,5 +2662,7 @@ setInterval(() => {
   checkAlerts();
 }, 700);
 setInterval(backfill, 60000);
+// Fundamentals panels check for fresh news and update "5m ago" times once a minute.
+setInterval(() => tiles.forEach(t => t.kind === 'fund' && t.paintFund()), 60000);
 })();
 </script>
