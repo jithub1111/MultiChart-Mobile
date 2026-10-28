@@ -325,6 +325,10 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .tabs button[aria-current="true"] { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--head)); }
 .tabs button svg { width: 9px; height: 9px; }
 .tabs .addtab { padding: 0 10px; font-size: 15px; }
+.tabs button.out { border-style: dashed; }
+.tabs button.out svg { width: 11px; height: 11px; }
+.notabs { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; color: var(--muted); font-size: 15px; zoom: var(--scale); }
+.notabs p { margin: 0; }
 /* tabs moved up into the top bar when it all fits on one line (the bar is already zoomed) */
 .bar > .tabs { zoom: 1; padding-bottom: 0; }
 .zoomctl { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; background: var(--head); }
@@ -748,9 +752,28 @@ if (location.hash.startsWith('#live=')) {
 const setupLink = () => location.origin + location.pathname + '#live=' + b64.enc(JSON.stringify({ h: dataCfg.helper, p: dataCfg.pass }));
 const isLive = () => dataCfg.mode === 'alpaca' ? !!dataCfg.key && !!dataCfg.secret : dataCfg.mode === 'schwab' ? !!dataCfg.helper && !!dataCfg.pass : false;
 const SOURCE = { alpaca: 'IEX', schwab: 'Schwab' };
+// Several windows can be open at once (tabs popped out onto other monitors, the picture-in-picture
+// copy, two browser tabs), but Schwab and Alpaca allow one live connection. So one window, the
+// leader, holds it: the others tell it which symbols they show, and it subscribes them all and
+// passes on what arrives. If it closes, another window takes over (see "windows" below).
+const bus = 'BroadcastChannel' in window ? new BroadcastChannel('multichart') : null;
+const post = m => { if (bus) try { bus.postMessage(m); } catch (e) {} };
+let leader = !(bus && navigator.locks), leaderFeed = '';
+const remote = new Map();  // the leader's record of what each other window shows
+function others() {
+  const out = [], now = Date.now();
+  remote.forEach((o, id) => { if (now - o.at > 5000) remote.delete(id); else out.push(o); });
+  return out;
+}
+const streamUp = () => !!(ws && ws.authed) || (!leader && leaderFeed === 'live');
+function askStream() {
+  post({ t: 'want', from: winId, charts: [...wanted()].filter(x => stores[x] && stores[x].ready), watch: [...watchSyms()].filter(x => !(quotes.get(x) || {}).missing) });
+}
+const winId = Math.random().toString(36).slice(2);
 let feed = { state: 'demo', msg: '' };
 function setFeed(state, msg = '') {
   feed = { state, msg };
+  if (leader) post({ t: 'feed', state, msg });
   const el = document.getElementById('feedBtn');
   if (!el) return;
   el.dataset.state = state;
@@ -831,7 +854,7 @@ async function loadLive(s) {
     s.inc = tickSize(last(s));
     requote(s);
     s.ready = true;
-    if (feed.state === 'error' && /keys|reach|password|sign/i.test(feed.msg)) setFeed(ws && ws.authed ? 'live' : 'connecting');
+    if (feed.state === 'error' && /keys|reach|password|sign/i.test(feed.msg)) setFeed(streamUp() ? 'live' : 'connecting');
   } catch (e) {
     if (stores[sym] !== s) return;
     s.error = e.message; s.errCode = e.code;
@@ -958,10 +981,11 @@ function closeStream() {
 }
 function syncStream() {
   if (!isLive() || held) return closeStream();
+  if (!leader) { closeStream(); return askStream(); }
   if (!ws) { if (!wsTimer) openStream(); return; }
   if (!ws.authed) return;
   if (ws.schwab) return syncSchwab();
-  const want = new Set([...wanted()].filter(x => stores[x] && stores[x].ready));
+  const want = new Set([...wanted()].filter(x => stores[x] && stores[x].ready).concat(...others().map(o => o.charts)));
   const drop = [...wsSyms].filter(x => !want.has(x));
   if (drop.length) { ws.send(JSON.stringify({ action: 'unsubscribe', trades: drop, quotes: drop })); drop.forEach(x => wsSyms.delete(x)); }
   const add = [...want].filter(x => !wsSyms.has(x)).slice(0, Math.max(0, 30 - wsSyms.size));
@@ -969,7 +993,7 @@ function syncStream() {
 }
 function openStream() {
   wsTimer = 0;
-  if (held) return;
+  if (held || !leader) return;
   if (dataCfg.mode === 'schwab') return openSchwab();
   if (feed.state !== 'error') setFeed('connecting');
   let sock;
@@ -992,9 +1016,10 @@ function openStream() {
         setFeed('error', { 402: 'Alpaca did not accept the keys. Check the Key ID and Secret.', 406: 'Live data is already open somewhere else (another tab or device). The free plan allows one connection, so close the other one. Retrying every 30 seconds.', 405: 'Too many symbols: the free plan streams up to 30 at once.', 409: 'Your Alpaca plan does not include this live feed.' }[m.code] || `Live feed error: ${m.msg}`);
         if (m.code === 406) wsTries = 5;
       }
-      else if (m.T === 't') { const s = stores[m.S]; if (s && s.live && s.ready) addTrade(s, tms(m.t), m.p, m.s); }
-      else if (m.T === 'q') { const s = stores[m.S]; if (s && s.live) { s.qb = m.bp; s.qa = m.ap; } }
+      else onAlpaca(m);
     }
+    const pass = msgs.filter(m => m.T === 't' || m.T === 'q');
+    if (pass.length) post({ t: 'alpaca', msgs: pass });
   };
   sock.onclose = () => {
     if (ws !== sock) return;
@@ -1003,6 +1028,11 @@ function openStream() {
     if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Alpaca. Reconnecting.' : 'Could not open the live connection to Alpaca. Retrying.');
     wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
   };
+}
+function onAlpaca(m) {
+  const s = stores[m.S];
+  if (m.T === 't') { if (s && s.live && s.ready) addTrade(s, tms(m.t), m.p, m.s); }
+  else if (m.T === 'q') { if (s && s.live) { s.qb = m.bp; s.qa = m.ap; } }
 }
 /* ---------- live data (Schwab) ---------- */
 // The Schwab app keys live in a small helper (worker/ in this repo) that also keeps the
@@ -1047,6 +1077,7 @@ function sSend(sock, service, command, parameters) {
 }
 function syncSchwab() {
   const charts = [...wanted()].filter(x => stores[x] && stores[x].ready), watch = [...watchSyms()].filter(x => !(quotes.get(x) || {}).missing);
+  others().forEach(o => { charts.push(...o.charts); watch.push(...o.watch); });  // what the other windows show
   S_SUBS.forEach(([svc, fields]) => {
     // Watchlist tickers only need prices (Level I); charts also get minute bars and the book.
     const keys = [...new Set(svc === 'LEVELONE_EQUITIES' ? [...charts, ...watch] : charts)].sort().join(',');
@@ -1100,6 +1131,7 @@ async function openSchwab() {
       } else if (code === 19) setFeed('error', 'Schwab says too many symbols are streaming at once.');
     });
     (m.data || []).forEach(onSchwabData);
+    if (m.data) post({ t: 'schwab', data: m.data });
   };
   sock.onclose = () => {
     if (ws !== sock) return;
@@ -1165,7 +1197,8 @@ const ICON = {
   more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>',
   plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 3v10M3 8h10"/></svg>',
   grip: '<svg viewBox="0 0 12 12" fill="currentColor"><circle cx="4" cy="2.5" r="1.1"/><circle cx="8" cy="2.5" r="1.1"/><circle cx="4" cy="6" r="1.1"/><circle cx="8" cy="6" r="1.1"/><circle cx="4" cy="9.5" r="1.1"/><circle cx="8" cy="9.5" r="1.1"/></svg>',
-  draw: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 13.5l11-9"/><circle cx="2.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="4.5" r="1.3" fill="currentColor"/><path d="M1.5 8h4M10.5 12h4" stroke-dasharray="1.5 1.5"/></svg>'
+  draw: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 13.5l11-9"/><circle cx="2.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="4.5" r="1.3" fill="currentColor"/><path d="M1.5 8h4M10.5 12h4" stroke-dasharray="1.5 1.5"/></svg>',
+  popout: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4"/></svg>'
 };
 const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S', fund: 'Fundamentals', watch: 'Watchlist' };
 function chartColors() {
@@ -2311,7 +2344,8 @@ const PRESETS = [
 ];
 const CODE = { c: 'chart', l: 'l2', t: 'ts', b: 'lts' };
 let nextId = 1;
-const newCell = (kind, extra) => ({ id: 'p' + nextId++, kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
+let tabs = [], activeTab = 0;  // workspace tabs, filled in below
+const newCell = (kind, extra) => ({ id: pid(), kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
 const isLeaf = n => !!n.kind;
 // A Level II and a Time & Sales side by side. It stays one unit, so turning the layout keeps them together.
 const isPair = n => !isLeaf(n) && n.children.length === 2 && n.children.every(isLeaf) && n.children.map(c => c.kind).sort().join() === 'l2,ts';
@@ -2390,28 +2424,66 @@ if (!state.root) state.root = fromPreset(innerWidth < 700 ? ['c', 'c', 'lt'] : [
 
 // Workspace tabs: each tab is its own { name, root, chartsOnly }, and `state` is the open tab.
 const TABS_KEY = 'multichart-tabs-v1';
-let tabs = [], activeTab = 0;
 try {
   const t = JSON.parse(localStorage.getItem(TABS_KEY));
   if (t && t.tabs && t.tabs.length) { tabs = t.tabs; activeTab = Math.min(t.active || 0, tabs.length - 1); }
 } catch (e) {}
 if (!tabs.length) tabs = [{ name: 'Tab 1', ...state }];
-tabs.forEach(tab => leaves(tab.root).forEach(c => { nextId = Math.max(nextId, +c.id.slice(1) + 1); }));
+const tabId = () => 't' + Math.random().toString(36).slice(2, 9);
+tabs.forEach(tab => { if (!tab.id) tab.id = tabId(); });
+// A tab can pop out into its own window (?win=<tab id>), say on another monitor. That window shows
+// only its tab; the main window shows the rest and marks the popped-out ones. Each window saves the
+// tabs it owns and takes the others' latest versions as they change (see mergeTabs).
+let popTab = new URLSearchParams(location.search).get('win');
+if (popTab && !tabs.some(t => t.id === popTab)) popTab = null;  // that tab was closed meanwhile
+const outTabs = new Set();  // in the main window: tabs that are open in windows of their own
+const owns = id => popTab ? id === popTab : !outTabs.has(id);
+const madeHere = new Set(), goneTabs = new Set();
+let savedActive = activeTab;
+if (popTab) activeTab = tabs.findIndex(t => t.id === popTab);
 state = tabs[activeTab];
+// Panel ids stay unique across tabs, including ones another window just added.
+function pid() {
+  tabs.forEach(tab => leaves(tab.root || null).forEach(c => { nextId = Math.max(nextId, +c.id.slice(1) + 1 || 0); }));
+  return 'p' + nextId++;
+}
 
 function save() {
   try {
-    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active: activeTab }));
-    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active: popTab ? savedActive : activeTab }));
+    if (!popTab) localStorage.setItem(KEY, JSON.stringify(state));
   } catch (e) {}
+}
+// Another window saved its tabs: keep this window's own tabs and take everything else from there.
+function mergeTabs(j) {
+  if (!j || !Array.isArray(j.tabs)) return;
+  const mine = new Map(tabs.filter(t => owns(t.id)).map(t => [t.id, t]));
+  const next = j.tabs.filter(t => t && t.id && t.root !== undefined && !goneTabs.has(t.id)).map(t => mine.get(t.id) || t);
+  // A tab made here that the other window hadn't heard of yet stays, and goes back into storage.
+  let missing = false;
+  mine.forEach((t, id) => { if (!next.includes(t) && (madeHere.has(id) || id === popTab)) { next.push(t); missing = true; } });
+  if (popTab) savedActive = Math.min(j.active || 0, next.length - 1);
+  const was = JSON.stringify(tabs.map(t => [t.id, t.name]));
+  tabs = next;
+  activeTab = Math.max(0, tabs.indexOf(state));
+  if (JSON.stringify(tabs.map(t => [t.id, t.name])) !== was) renderTabs();
+  if (missing) save();
 }
 const visible = c => !state.chartsOnly || c.kind === 'chart';
 
 /* ---------- render ---------- */
 const grid = document.getElementById('grid');
 let editing = false;
+let noTabs = false;  // the main window, when every tab is open in a window of its own
 function render() {
   grid.textContent = '';
+  if (noTabs) {
+    for (const [id, t] of tiles) { t.destroy(); tiles.delete(id); }
+    grid.innerHTML = '<div class="notabs"><p>Every tab is open in its own window.</p><button class="btn primary" type="button">New tab</button></div>';
+    grid.querySelector('.notabs button').onclick = () => newTab();
+    renderTabs();
+    return;
+  }
   const live = new Set();
   const place = cell => {
     let t = tiles.get(cell.id);
@@ -2751,6 +2823,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
+      ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
     p.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
       setZoomMode(b.dataset.zoom); closePop();
@@ -2766,6 +2839,8 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
     const pp = p.querySelector('[data-a=pip]');
     if (pp) pp.onclick = () => { closePop(); docPip ? floatApp() : floatVideo(null); };
+    const ib = p.querySelector('[data-a=install]');
+    if (ib) ib.onclick = () => { closePop(); installApp(); };
   });
 });
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
@@ -2775,13 +2850,19 @@ document.getElementById('modeCharts').addEventListener('click', () => { state.ch
 /* ---------- workspace tabs ---------- */
 function renderTabs() {
   const nav = document.getElementById('tabs');
-  nav.innerHTML = tabs.map((t, i) => `<button data-tab="${i}" aria-current="${i === activeTab}">${esc(t.name)}${i === activeTab ? ICON.caret : ''}</button>`).join('') +
-    '<button class="addtab" id="addTab" aria-label="New tab">+</button>';
+  // A popped-out window lists only its own tab; the main window marks the ones out in other windows.
+  nav.innerHTML = tabs.map((t, i) => {
+    if (popTab && t.id !== popTab) return '';
+    const out = !owns(t.id), on = i === activeTab && !out && !noTabs;
+    return `<button data-tab="${i}" aria-current="${on}"${out ? ' class="out" title="Open in its own window"' : ''}>${esc(t.name)}${out ? ICON.popout : on ? ICON.caret : ''}</button>`;
+  }).join('') + (popTab ? '' : '<button class="addtab" id="addTab" aria-label="New tab">+</button>');
   nav.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
     const i = +b.dataset.tab;
-    if (i === activeTab) tabPop(b); else switchTab(i);
+    if (!owns(tabs[i].id)) outPop(b, tabs[i]);
+    else if (i === activeTab && !noTabs) tabPop(b); else switchTab(i);
   });
-  nav.querySelector('#addTab').onclick = () => newTab();
+  const add = nav.querySelector('#addTab');
+  if (add) add.onclick = () => newTab();
   renderZoom();
   placeTabs();
 }
@@ -2834,7 +2915,8 @@ function applyScale() {
 addEventListener('resize', () => { if (scalePref === 'auto') applyScale(); });
 function switchTab(i) {
   closePop();
-  maxed = null; editing = false;
+  if (!tabs[i] || !owns(tabs[i].id)) return;
+  maxed = null; editing = false; noTabs = false;
   activeTab = i; state = tabs[i];
   orientLayout();
   render();
@@ -2935,39 +3017,65 @@ function newTab(copyFrom) {
   const n = tabs.length + 1;
   let name = 'Tab ' + n;
   while (tabs.some(t => t.name === name)) name += '+';
-  const tab = { name, chartsOnly: false, root: null };
+  const tab = { id: tabId(), name, chartsOnly: false, root: null };
+  madeHere.add(tab.id);
   if (copyFrom) {
     tab.name = copyFrom.name + ' copy';
     tab.chartsOnly = copyFrom.chartsOnly;
     tab.root = JSON.parse(JSON.stringify(copyFrom.root));
-    leaves(tab.root).forEach(c => { c.id = 'p' + nextId++; });
+    leaves(tab.root).forEach(c => { c.id = pid(); });
   }
   tabs.push(tab);
-  activeTab = tabs.length - 1; state = tab;
+  activeTab = tabs.length - 1; state = tab; noTabs = false;
   if (!tab.root) state.root = fromPreset(['cc', 'cc']);
   maxed = null; editing = false;
   render();
 }
 function tabPop(anchor) {
+  const here = tabs.filter(t => owns(t.id)).length;
   openPop(anchor, `
     <h4>This tab</h4>
     <form class="symform" id="renameTab"><input id="tabName" maxlength="24" value="${esc(state.name)}" aria-label="Tab name" style="text-transform:none;font-family:var(--ui);font-weight:500"><button class="btn primary" type="submit">Rename</button></form>
     <div class="menu">
+      ${popTab ? '<button data-a="back"><span>Put back in the main window</span></button>' : `
+      ${canPopOut ? `<button data-a="pop" ${here < 2 ? 'disabled' : ''}><span>Pop out to a new window <small>${here < 2 ? 'needs another tab here' : 'for another monitor'}</small></span></button>` : ''}
       <button data-a="dup"><span>Duplicate tab</span></button>
-      <button data-a="close" class="danger" ${tabs.length < 2 ? 'disabled' : ''}><span>Close tab</span></button>
+      <button data-a="close" class="danger" ${here < 2 ? 'disabled' : ''}><span>Close tab</span></button>`}
     </div>`, p => {
     p.querySelector('#renameTab').onsubmit = e => {
       e.preventDefault();
       const v = p.querySelector('#tabName').value.trim();
-      if (v) { state.name = v; save(); renderTabs(); }
+      if (v) { state.name = v; save(); renderTabs(); if (popTab) document.title = v + ' · Multichart'; }
       closePop();
     };
-    p.querySelector('[data-a=dup]').onclick = () => { closePop(); newTab(state); };
-    p.querySelector('[data-a=close]').onclick = () => {
-      closePop();
+    const on = (a, f) => { const b = p.querySelector(`[data-a=${a}]`); if (b) b.onclick = () => { closePop(); f(); }; };
+    on('back', () => window.close());
+    on('pop', () => popOut(activeTab));
+    on('dup', () => newTab(state));
+    on('close', () => {
+      goneTabs.add(state.id);
       tabs.splice(activeTab, 1);
-      switchTab(Math.max(0, activeTab - 1));
+      const i = tabs.findIndex((t, j) => j >= activeTab - 1 && owns(t.id));
+      switchTab(i >= 0 ? i : tabs.findIndex(t => owns(t.id)));
+    });
+  });
+}
+// A tab that is open in its own window.
+function outPop(anchor, tab) {
+  openPop(anchor, `
+    <h4>${esc(tab.name)}</h4>
+    <p class="note">This tab is open in its own window.</p>
+    <div class="menu">
+      <button data-a="show"><span>Show its window</span></button>
+      <button data-a="back"><span>Bring it back here</span></button>
+    </div>`, p => {
+    p.querySelector('[data-a=show]').onclick = () => {
+      closePop();
+      const w = popWins[tab.id];
+      if (w && !w.closed) w.focus(); else post({ t: 'focus', id: tab.id });
     };
+    // The other window closes itself; this one takes the tab back once it has (see watchTab).
+    p.querySelector('[data-a=back]').onclick = () => { closePop(); wantBack.add(tab.id); post({ t: 'close-tab', id: tab.id }); };
   });
 }
 
@@ -2979,7 +3087,7 @@ try { savedLayouts = JSON.parse(localStorage.getItem(SAVED_KEY)) || []; } catch 
 function persistSaved() { try { localStorage.setItem(SAVED_KEY, JSON.stringify(savedLayouts)); } catch (e) {} }
 function loadLayout(entry) {
   const root = JSON.parse(JSON.stringify(entry.root));
-  leaves(root).forEach(c => { c.id = 'p' + nextId++; });
+  leaves(root).forEach(c => { c.id = pid(); });
   maxed = null;
   state.root = root;
   state.chartsOnly = !!entry.chartsOnly;
@@ -3389,7 +3497,7 @@ async function floatApp() {
   try { w = await documentPictureInPicture.requestWindow({ width, height }); }
   catch (e) { toast(`Picture-in-picture did not open${e && e.message ? ': ' + esc(e.message) : '.'}`); return; }
   pipWin = w; held = true;
-  closeStream(); closePop(); sheet.hidden = true;
+  stepDown(); closeStream(); closePop(); sheet.hidden = true;
   document.getElementById('pipCover').hidden = false;
   const d = w.document, u = new URL(location.href);
   u.hash = ''; u.searchParams.set('pip', '1');
@@ -3586,6 +3694,118 @@ function paintSvg(c, svg, r) {
   c.restore();
 }
 
+/* ---------- windows ---------- */
+// Only where windows can sit side by side: a computer, not a phone or tablet.
+const canPopOut = !!(bus && navigator.locks) && !inPip && matchMedia('(hover: hover) and (pointer: fine)').matches;
+const popWins = {}, wantBack = new Set(), watching = new Set();
+let dropLead = null, seeking = false;
+// The first window to get the lock holds the live connection until it closes or steps aside.
+function seekLead() {
+  if (leader || seeking || held || !bus || !navigator.locks) return;
+  seeking = true;
+  navigator.locks.request('multichart-stream', () => new Promise(done => {
+    seeking = false;
+    if (held) return done();
+    dropLead = done; leader = true;
+    setFeed(isLive() ? 'connecting' : 'demo');
+    syncStream();
+  }));
+}
+function stepDown() {
+  if (dropLead) { dropLead(); dropLead = null; }
+  if (bus && navigator.locks) leader = false;
+}
+if (bus) bus.onmessage = e => {
+  const m = e.data || {};
+  if (m.t === 'want' && leader) {
+    if (!remote.has(m.from)) post({ t: 'feed', state: feed.state, msg: feed.msg });  // a new window: tell it how things stand
+    remote.set(m.from, { charts: m.charts || [], watch: m.watch || [], at: Date.now() });
+    syncStream();
+  } else if (m.t === 'schwab' && !leader) (m.data || []).forEach(onSchwabData);
+  else if (m.t === 'alpaca' && !leader) (m.msgs || []).forEach(onAlpaca);
+  else if (m.t === 'feed' && !leader && !held) {
+    leaderFeed = m.state;
+    // This window's own loading problems still show; otherwise it reports the leader's connection.
+    const bad = m.state === 'live' && Object.values(stores).find(x => x.error && x.errCode !== 'empty');
+    if (isLive()) setFeed(bad ? 'error' : m.state, bad ? bad.error : m.msg);
+  }
+  else if (m.t === 'close-tab' && m.id === popTab) window.close();
+  else if (m.t === 'focus' && m.id === popTab) window.focus();
+  else if (m.t === 'tab-open' && !popTab && tabs.some(t => t.id === m.id)) {
+    outTabs.add(m.id); watchTab(m.id);
+    if (state.id === m.id && !noTabs) leaveTab(); else renderTabs();
+  }
+};
+// The main window steps off a tab that went to another window.
+function leaveTab() {
+  const i = tabs.findIndex(t => owns(t.id));
+  if (i >= 0) switchTab(i); else { noTabs = true; render(); }
+}
+// A popped-out window holds its tab's lock while it is open; once the lock comes free, the tab is back.
+function watchTab(id) {
+  if (watching.has(id) || !navigator.locks) return;
+  watching.add(id);
+  navigator.locks.request('multichart-tab-' + id, () => {
+    watching.delete(id); outTabs.delete(id); delete popWins[id];
+    const i = tabs.findIndex(t => t.id === id);
+    if (i >= 0 && (noTabs || wantBack.has(id))) switchTab(i); else renderTabs();
+    wantBack.delete(id);
+  });
+}
+function popOut(i) {
+  const t = tabs[i], w = Math.round(Math.min(screen.availWidth, outerWidth) * 0.8), h = Math.round(Math.min(screen.availHeight, outerHeight) * 0.8);
+  save();
+  const win = open(location.pathname + '?win=' + encodeURIComponent(t.id), 'multichart-' + t.id, `popup,width=${w},height=${h},left=${screenX + 60},top=${screenY + 60}`);
+  if (!win) return toast('The browser blocked the new window. Allow pop-ups for this site, then try again.');
+  popWins[t.id] = win; outTabs.add(t.id);
+  // If the window never opens properly, the tab comes back here.
+  setTimeout(() => { if (outTabs.has(t.id) && !watching.has(t.id)) { outTabs.delete(t.id); renderTabs(); } }, 15000);
+  if (i === activeTab) leaveTab(); else renderTabs();
+}
+if (popTab) {
+  document.title = state.name + ' · Multichart';
+  if (navigator.locks) navigator.locks.request('multichart-tab-' + popTab, () => { post({ t: 'tab-open', id: popTab }); return new Promise(() => {}); });
+} else if (bus && navigator.locks) navigator.locks.query().then(q => {
+  (q.held || []).forEach(l => {
+    const id = (/^multichart-tab-(.+)$/.exec(l.name) || [])[1];
+    if (id && tabs.some(t => t.id === id)) { outTabs.add(id); watchTab(id); }
+  });
+  if (!owns(state.id)) leaveTab(); else renderTabs();
+}).catch(() => {});
+
+// What one window saves, the others pick up.
+addEventListener('storage', e => {
+  if (!e.key || !e.key.startsWith('multichart-') || held) return;
+  let j = null;
+  try { j = JSON.parse(e.newValue); } catch (err) {}
+  const charts = () => tiles.forEach(t => t.chart && t.syncLines());
+  switch (e.key) {
+    case TABS_KEY: mergeTabs(j); break;
+    case ALERT_KEY: alerts = Array.isArray(j) ? j : []; paintBell(); charts(); break;
+    case DRAW_KEY: drawings = j && typeof j === 'object' ? j : {}; charts(); break;
+    case WL_KEY: if (j && Array.isArray(j.lists)) { wlists = j.lists.filter(l => l && l.id && Array.isArray(l.syms)); paintLists(); } break;
+    case COLOR_KEY: colors = j && typeof j === 'object' ? j : {}; applyColors(); break;
+    case SCALE_KEY: if (j === 'auto' || typeof j === 'number') { scalePref = j; applyScale(); } break;
+    case SAVED_KEY: savedLayouts = Array.isArray(j) ? j : []; break;
+    case ZOOM_KEY: zoomMode = e.newValue === 'highlight' ? 'highlight' : 'pinch'; tiles.forEach(t => t.chart && t.applyZoomMode()); break;
+    case VOLSEP_KEY: if ((e.newValue === '1') !== volSep) { volSep = !volSep; for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); } render(); } break;
+    case ROTATE_KEY: rotateOn = e.newValue !== '0'; break;
+    case DATA_KEY: location.reload(); break;  // a new data source or sign-in: start over with it
+  }
+});
+
+// Installing: Chrome and Edge offer it through the menu here; Safari on a Mac has File → Add to Dock.
+let installAsk = null;
+const installed = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installAsk = e; });
+addEventListener('appinstalled', () => { installAsk = null; toast('Multichart is installed. Open it from your Start menu, Dock or desktop.'); });
+function installApp() {
+  if (installAsk) { installAsk.prompt(); installAsk.userChoice.finally(() => { installAsk = null; }); return; }
+  toast(/Mac/.test(navigator.platform) && /Safari/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent)
+    ? 'In Safari, choose <b>File → Add to Dock</b> to install Multichart.'
+    : 'In Chrome or Edge, click the install icon at the right end of the address bar, or open the browser menu and choose <b>Install Multichart</b> (in Chrome it is under <b>Cast, save and share</b>).', true);
+}
+
 /* ---------- go ---------- */
 // Which side the camera cutout is on: the top of the phone points left at 90 degrees, right at 270.
 function markCutout() {
@@ -3601,6 +3821,7 @@ window.addEventListener('resize', markCutout);
 orientLayout();
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
+seekLead();
 syncStream();
 // A new device only lacks the app password (or its settings): open the data panel right away.
 if (dataCfg.mode === 'schwab' && !dataCfg.pass) openData();
@@ -3613,10 +3834,10 @@ function beat() {
     wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); });
     syncStream();
     // Watchlist prices stream from Schwab; a fresh batch now and then fills any gaps.
-    if (Date.now() - quotesAt > (ws && ws.authed && ws.schwab ? 120e3 : 15e3)) refreshQuotes();
+    if (Date.now() - quotesAt > (dataCfg.mode === 'schwab' && streamUp() ? 120e3 : 15e3)) refreshQuotes();
   } else new Set([...wanted(), ...watchSyms()]).forEach(sym => tick(store(sym)));
   tiles.forEach(t => t.update());
-  checkAlerts();
+  if (leader) checkAlerts();  // one window watches the alerts, so a hit beeps once
   if (vp.on) paintPip();
 }
 setInterval(beat, 700);
