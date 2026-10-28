@@ -14,7 +14,7 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides everything except the charts
 - **Colors** panel: change every color (backgrounds, borders, headers, candles, VWAP, each Level II price level, Time & Sales), or start from the Dark, DAS classic or Light theme
-- DAS-style Level II: each price level has its own background color on both the bid and ask side
+- DAS-style Level II: each price level has its own background color on both the bid and ask side. **Level II columns** in the panel menu shows or hides the MMID, Size and **Cumulative size** (the running total of shares from the best price) columns, and **Group by price** puts all the orders at one price on a single row
 - **Text size** in the menu of each Level II, Time & Sales and Level II + T&S panel, from 70% to 200%
 - **Workspace tabs**: Tab 1, Tab 2 and so on, each with its own layout. Tap the open tab to rename, duplicate or close it
 - **Saved layouts**: name and save the current layout from the Layout menu, then load it later
@@ -22,7 +22,7 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - **Price alerts**: set them by tapping a price on the chart or from the Alerts menu. When one hits, a pop-up appears and the app beeps. Email and text delivery will come with the live data server
 - Faded ticker watermark behind each chart
 - **Zoom**: the − / + buttons next to Colors in the top bar scale the whole interface from 50% to 200%. Tap the percentage to go back to **Auto**, which picks a size for the screen (smaller on phones, larger on big monitors)
-- Charts: timeframes 1m, 2m, 5m, 15m, 30m, 1h, daily and weekly, with candles, volume and a session VWAP
+- Charts: timeframes 1m, 2m, 5m, 15m, 30m, 1h, daily and weekly, with candles, volume and a session VWAP. The box next to the timeframe picks how much the chart opens on: 1, 2, 3, 5 or 10 days for intraday charts, and 1M, 3M, 6M, YTD, 1Y, 2Y or 5Y for daily and weekly ones
 - Your layout is saved in the browser on each device
 
 ## Data

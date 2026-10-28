@@ -173,8 +173,17 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .ba .bid { color: var(--down); } .ba .ask { color: var(--up); }
 .name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @container (max-width: 470px) { .ba { display: none; } }
-@container (max-width: 330px) { .chg { display: none; } }
+@container (max-width: 330px) {
+  .chg { display: none; }
+  .th { gap: 4px; }
+  /* small panels: the day and timeframe boxes drop their arrows to leave room for the buttons */
+  .tf { appearance: none; -webkit-appearance: none; padding: 0 5px; text-align: center; }
+  .days + .tf { margin-left: 2px; }
+}
+/* the price scale already shows the last price, so the smallest charts give its header spot to the buttons */
+@container (max-width: 250px) { .ctile .th .last { display: none; } }
 @container (max-width: 230px) { .last { font-size: 13px; } .tile:not(.wtile) .link { display: none; } }
+.days + .tf { margin-left: 3px; }
 .tf {
   margin-left: auto; height: 24px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel);
   font-family: var(--num); font-size: 12px; font-weight: 600; padding: 0 2px;
@@ -198,7 +207,11 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .duo { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1px; background: var(--line); }
 .duo > .tbl { position: relative; inset: auto; background: var(--panel); container-type: size; }
 .book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 100%; }
-.side { background: var(--panel); }
+/* Each side of the book is one grid, and its rows share its columns (subgrid), so the columns line up down the side
+   and fit what's in them. The MMID column gives way first when the panel is narrow. */
+.side { background: var(--panel); display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; column-gap: 6px; align-content: start; }
+.side .r { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: inherit; }
+.side .r small { font-size: .85em; opacity: .75; }
 .r { display: grid; grid-template-columns: minmax(0, 1fr) 7ch 7ch; gap: 6px; padding: 2px 6px; white-space: nowrap; }
 .r > span { overflow: hidden; text-overflow: ellipsis; }
 .r > span + span { text-align: right; }
@@ -211,10 +224,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .tape .buy { color: var(--ts-buy); } .tape .sell { color: var(--ts-sell); } .tape .mid { color: var(--ts-mid); }
 .tape .big { font-weight: 700; }
 @container (max-width: 380px) {
-  .book .r { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; padding: 2px 4px; font-size: .875em; }
-  .book .r > span:first-child { display: none; }
-  .book .r > span + span { text-align: left; }
-  .book .r > span:last-child { text-align: right; }
+  .side { column-gap: 4px; }
+  .book .r { padding: 2px 4px; font-size: .875em; }
   .tape .r { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 2px 4px; font-size: .92em; }  /* when squeezed, the time gives way before the price */
 }
 
@@ -511,6 +522,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 (() => {
 /* ---------- demo market data ---------- */
 const TF = { '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '1h': 60, 'D': 'D', 'W': 'W' };
+// How much an intraday chart opens on (sessions), and how far back a daily or weekly chart opens (months, or the year so far).
+const DAYS = [1, 2, 3, 5, 10];
+const RANGES = { '1M': 1, '3M': 3, '6M': 6, 'YTD': 'ytd', '1Y': 12, '2Y': 24, '5Y': 60 }, RANGE_DEFAULT = { D: '6M', W: '2Y' };
 const OPEN = 9 * 3600 + 30 * 60;           // 9:30 ET, stored as wall-clock seconds
 const SESSION = 390;                        // minutes per regular session
 const CLOSE = 16 * 3600;                    // 4:00 PM ET
@@ -827,7 +841,7 @@ function settle(s, m1, daily, emptyMsg) {
 }
 async function loadAlpaca(s) {
   const sym = s.sym, now = Date.now();
-  const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 420 * 864e5)]);
+  const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 6 * 365 * 864e5)]);
   settle(s, m1, daily, `No data for ${sym}. The free feed covers US-listed stocks and ETFs, not OTC.`);
   try {
     const snap = await api(`/v2/stocks/${encodeURIComponent(sym)}/snapshot`, { feed: 'iex' });
@@ -996,9 +1010,11 @@ const candles = (j, daily) => (j.candles || []).map(c => {
 async function loadSchwab(s) {
   // Without an explicit end date Schwab stops at the previous trading day, leaving out today.
   const q = `/pricehistory?symbol=${encodeURIComponent(s.sym)}&endDate=${Date.now() + 60e3}&`;
+  const minutes = days => helper(q + `periodType=day&frequencyType=minute&frequency=1&needExtendedHoursData=true&startDate=${Date.now() - days * 864e5}`);
+  // 16 calendar days of minute bars covers a 10-day chart; if Schwab won't reach that far, take 10.
   const [m, d] = await Promise.all([
-    helper(q + `periodType=day&frequencyType=minute&frequency=1&needExtendedHoursData=true&startDate=${Date.now() - 10 * 864e5}`),
-    helper(q + `periodType=year&frequencyType=daily&frequency=1&startDate=${Date.now() - 2 * 365 * 864e5}`)
+    minutes(16).catch(() => minutes(10)),
+    helper(q + `periodType=year&frequencyType=daily&frequency=1&startDate=${Date.now() - 6 * 365 * 864e5}`)
   ]);
   settle(s, candles(m), candles(d, true), `No data for ${s.sym}. Check the symbol.`);
   try {
@@ -1171,16 +1187,25 @@ function setVolSep(on) {
   for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); }
   render();
 }
-// The newest session from pre-market on; a day that has barely started brings the day before with it.
-function dayStart(list) {
+// Where a daily or weekly chart's range starts: the first bar on or after that many months before the newest one.
+function rangeStart(list, r) {
+  if (!list.length) return 0;
+  const end = new Date(list[list.length - 1].time * 1000), m = RANGES[r];
+  const cut = (m === 'ytd' ? Date.UTC(end.getUTCFullYear(), 0, 1) : Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - m, end.getUTCDate())) / 1000;
+  const i = list.findIndex(b => b.time >= cut);
+  return i < 0 ? 0 : i;
+}
+// Where the newest n sessions start, from pre-market on; a day that has barely started brings one more day with it.
+function dayStart(list, n = 1) {
   const day = b => Math.floor(b.time / 86400);
   let i = list.length - 1;
   if (i < 0) return 0;
-  for (let pass = 0; pass < 2 && i > 0; pass++) {
+  for (let count = 1; i > 0; count++) {
     const d = day(list[i]);
     while (i > 0 && day(list[i - 1]) === d) i--;
-    if (list.length - i >= 30) break;
-    if (pass === 0) i--;
+    if (count === 1 && list.length - i < 30) n++;
+    if (count >= n) break;
+    i--;
   }
   return Math.max(0, i);
 }
@@ -1632,9 +1657,25 @@ function flash(el, up) {
   el.animate([{ background: css(up ? '--up' : '--down') + '50' }, { background: 'transparent' }], { duration: 500, easing: 'ease-out' });
 }
 
-function bookHtml(s, d) {
-  const rows = (list, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
-    list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
+// Level II columns you can turn on and off (the price always shows). Cumulative is the running total of shares
+// from the best price down to each row. Grouping by price puts all the orders at one price on a single row.
+const L2COLS = { mm: 'MMID', size: 'Size', cum: 'Cum' }, L2DEFAULT = ['mm', 'size'];
+const l2colsOf = cell => Array.isArray(cell.l2cols) ? cell.l2cols.filter(k => L2COLS[k]) : L2DEFAULT;
+const fCum = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v.toLocaleString();
+function byPrice(list) {
+  const out = [];
+  list.forEach(o => { const g = out[out.length - 1]; if (g && g.lv === o.lv) { g.size += o.size; g.n++; } else out.push({ ...o, n: 1 }); });
+  return out;
+}
+function bookHtml(s, d, cell = {}) {
+  const on = l2colsOf(cell), cols = ['mm', 'price', 'size', 'cum'].filter(k => k === 'price' || on.includes(k));
+  const grid = cols.map(k => k === 'mm' ? 'minmax(0, 1fr)' : k === 'price' && !on.includes('mm') ? 'minmax(max-content, 1fr)' : 'max-content').join(' ');
+  const rows = (list, label) => {
+    let cum = 0;
+    const cellOf = (o, k) => k === 'mm' ? esc(o.ex) + (o.n > 1 ? ` <small>+${o.n - 1}</small>` : '') : k === 'price' ? o.price.toFixed(d) : k === 'size' ? o.size.toLocaleString() : fCum(cum);
+    return `<div class="side" style="grid-template-columns:${grid}"><div class="r hd">${cols.map(k => `<span>${k === 'price' ? label : L2COLS[k]}</span>`).join('')}</div>` +
+      (cell.l2group ? byPrice(list) : list).map(o => { cum += o.size; return `<div class="r lv${Math.min(o.lv, 5)}">${cols.map(k => `<span>${cellOf(o, k)}</span>`).join('')}</div>`; }).join('') + '</div>';
+  };
   return (s.live && !s.realBook ? `<div class="simnote">${dataCfg.mode === 'schwab' ? 'Waiting for Schwab\'s book · depth simulated' : 'Depth simulated · top is IEX bid/ask'}</div>` : '') + `<div class="book">${rows(s.book.bids, 'Bid')}${rows(s.book.asks, 'Ask')}</div>`;
 }
 function tapeHtml(s, d) {
@@ -1648,7 +1689,7 @@ class Tile {
     this.kind = cell.kind;
     const el = this.el = document.createElement('section');
     const chart = this.kind === 'chart', watch = this.kind === 'watch';
-    el.className = watch ? 'tile wtile' : 'tile';
+    el.className = watch ? 'tile wtile' : chart ? 'tile ctile' : 'tile';
     el.innerHTML = `
       <div class="th">
         <button class="sym" aria-label="${watch ? 'Choose watchlist' : 'Change symbol'}"></button>
@@ -1658,7 +1699,7 @@ class Tile {
         <span class="last"></span>
         <span class="stack chg"><span class="c1"></span><span class="c2"></span></span>
         <span class="stack ba"><span>B: <b class="bid"></b></span><span>A: <b class="ask"></b></span></span>
-        ${chart ? `<select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
+        ${chart ? `<select class="tf days" aria-label="Days shown">${DAYS.map(n => `<option value="${n}">${n}D</option>`).join('')}</select><select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
         ${chart ? `<button class="ib drw" aria-label="Draw on chart">${ICON.draw}</button>` : ''}`}
         <button class="ib more" aria-label="Panel options">${ICON.more}</button>
       </div>
@@ -1675,8 +1716,14 @@ class Tile {
     this.$('.link').addEventListener('click', e => linkPop(e.currentTarget, this));
     this.$('.more').addEventListener('click', e => tileMenu(e.currentTarget, this));
     if (chart) {
-      this.$('.tf').id = 'tf-' + cell.id;
-      this.$('.tf').addEventListener('change', e => { cell.tf = e.target.value; this.load(); save(); });
+      const tf = this.$('.tf:not(.days)'), days = this.$('.days');
+      tf.id = 'tf-' + cell.id; days.id = 'days-' + cell.id;
+      tf.addEventListener('change', e => { cell.tf = e.target.value; this.load(); save(); });
+      days.addEventListener('change', e => {
+        const v = e.target.value;
+        if (!this.intraday) cell.range = v; else if (+v === 1) delete cell.days; else cell.days = +v;
+        this.fitView(); save();
+      });
       const body = this.$('.body');
       body.innerHTML = '<div class="legend"></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
@@ -2001,11 +2048,11 @@ class Tile {
   }
   showReset() {
     const b = this.$('.zoomreset');
-    b.textContent = this.intraday ? 'Whole day' : 'Reset zoom';
+    b.textContent = !this.intraday ? `Back to ${this.range}` : this.cell.days > 1 ? `All ${this.cell.days} days` : 'Whole day';
     b.style.right = (this.chart.priceScale('right').width() + 6) + 'px';
     b.hidden = false;
   }
-  // Intraday charts open on the whole day (pre-market on), daily and weekly on the last 150 bars.
+  // Intraday charts open on their chosen number of days (pre-market on), daily and weekly ones on their chosen range.
   // Until you scroll or zoom, the view keeps that framing as bars arrive and the panel resizes.
   fitView() {
     this.autoFit = true;
@@ -2014,9 +2061,10 @@ class Tile {
     requestAnimationFrame(() => requestAnimationFrame(() => this.autoFit && this.refit()));
   }
   refit() {
-    const n = this.fitN = this.list.length, from = this.intraday ? dayStart(this.list) : n - 150;
+    const n = this.fitN = this.list.length, from = this.intraday ? dayStart(this.list, this.cell.days || 1) : rangeStart(this.list, this.range);
     this.chart.timeScale().setVisibleLogicalRange({ from: from - 0.2, to: n + 4 });
   }
+  get range() { return RANGES[this.cell.range] ? this.cell.range : RANGE_DEFAULT[this.cell.tf] || '6M'; }
   get showVwap() { return this.cell.vwap && this.intraday; }
   volData(list) {
     const up = css('--up') + '99', down = css('--down') + '99';
@@ -2040,7 +2088,15 @@ class Tile {
       return;
     }
     if (this.kind === 'chart') {
-      this.$('.tf').value = this.cell.tf;
+      this.$('.tf:not(.days)').value = this.cell.tf;
+      // The same box picks days for intraday charts and a stretch of months or years for daily and weekly ones.
+      const span = this.$('.days'), intra = this.intraday;
+      if (span.dataset.k !== String(intra)) {
+        span.innerHTML = (intra ? DAYS.map(n => [n, n + 'D']) : Object.keys(RANGES).map(k => [k, k])).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+        span.dataset.k = intra;
+        span.setAttribute('aria-label', intra ? 'Days shown' : 'Time range shown');
+      }
+      span.value = intra ? this.cell.days || 1 : this.range;
       const list = bars(sym, this.cell.tf);
       const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
       this.candles.applyOptions({ priceFormat: fmt });
@@ -2084,7 +2140,7 @@ class Tile {
     } else if (this.kind !== 'fund') {
       const [a, b] = this.el.querySelectorAll('.tbl');
       if (this.kind === 'ts') a.innerHTML = tapeHtml(s, d);
-      else { a.innerHTML = bookHtml(s, d); if (b) b.innerHTML = tapeHtml(s, d); }
+      else { a.innerHTML = bookHtml(s, d, this.cell); if (b) b.innerHTML = tapeHtml(s, d); }
     }
     const ch = s.prevClose ? p - s.prevClose : 0, pct = s.prevClose ? ch / s.prevClose * 100 : 0, sign = ch >= 0 ? '+' : '', cls = ch >= 0 ? 'up' : 'down';
     const lastEl = this.$('.last');
@@ -2311,7 +2367,7 @@ try {
   else if (old && old.rows && old.rows.length) {
     state = { chartsOnly: !!old.chartsOnly, root: normalize({ dir: 'v', size: 1, children: old.rows.map(r => ({ dir: 'h', size: r.size, children: r.cells })) }) };
   }
-  allCells().forEach(c => { if (!TF[c.tf]) c.tf = '5m'; if (!KINDS[c.kind]) c.kind = 'chart'; nextId = Math.max(nextId, +c.id.slice(1) + 1); });
+  allCells().forEach(c => { if (!TF[c.tf]) c.tf = '5m'; if (c.days != null && !DAYS.includes(c.days)) delete c.days; if (c.range != null && !RANGES[c.range]) delete c.range; if (!KINDS[c.kind]) c.kind = 'chart'; nextId = Math.max(nextId, +c.id.slice(1) + 1); });
 } catch (e) { state = { root: null, chartsOnly: false }; }
 if (!state.root) state.root = fromPreset(innerWidth < 700 ? ['c', 'c', 'lt'] : ['cc', 'cc', 'll', 'tt']);
 
@@ -2481,7 +2537,7 @@ function tileMenu(anchor, t) {
       ${TEXT_KINDS.includes(t.kind) ? `<div class="tsz"><span>Text size</span><button data-z="-1" aria-label="Smaller text">A−</button><b>${Math.round((t.cell.tsize || 1) * 100)}%</b><button data-z="1" aria-label="Larger text">A+</button></div><hr>` : ''}
       ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
       ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button><button data-a="wpick"><span>Columns <small>add and remove</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
-        : `<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
+        : `${t.kind === 'l2' || t.kind === 'lts' ? '<button data-a="l2cols"><span>Level II columns <small>MMID, size, cumulative</small></span></button>' : ''}<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
       <hr>
       ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
@@ -2505,6 +2561,8 @@ function tileMenu(anchor, t) {
     const wc = p.querySelector('[data-a=wcols]'), wp = p.querySelector('[data-a=wpick]');
     if (wc) wc.onclick = () => { closePop(); delete t.cell.wcols; save(); t.load(); };
     if (wp) wp.onclick = () => { closePop(); colsPop(anchor, t); };
+    const lc = p.querySelector('[data-a=l2cols]');
+    if (lc) lc.onclick = () => { closePop(); l2ColsPop(anchor, t); };
     if (wa) wa.onclick = () => {
       closePop();
       const l = activeList(), sym = t.cell.sym, seen = [...tiles.values()].some(x => x.kind === 'watch');
@@ -2539,6 +2597,34 @@ function colsPop(anchor, t) {
       save(); t.load();
     });
     p.querySelector('[data-a=auto]').onclick = () => { closePop(); delete t.cell.wshow; save(); t.load(); };
+  });
+}
+
+function l2ColsPop(anchor, t) {
+  const row = (attr, label, note, on) => `<button ${attr}><span>${label} <small>${note}</small></span><span class="check ${on ? 'on' : ''}"></span></button>`;
+  const on = () => l2colsOf(t.cell);
+  openPop(anchor, `
+    <h4>Level II columns</h4>
+    <div class="menu">
+      ${row('data-c="mm"', 'MMID', 'who is quoting', on().includes('mm'))}
+      ${row('data-c="size"', 'Size', 'shares at that row', on().includes('size'))}
+      ${row('data-c="cum"', 'Cumulative size', 'running total from the best price', on().includes('cum'))}
+      <hr>
+      ${row('data-g="1"', 'Group by price', 'one row per price, sizes added up', !!t.cell.l2group)}
+    </div>
+    <p class="note">The price always shows.</p>`, p => {
+    p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
+      const k = b.dataset.c, cur = on();
+      t.cell.l2cols = Object.keys(L2COLS).filter(x => x === k ? !cur.includes(k) : cur.includes(x));
+      b.querySelector('.check').classList.toggle('on', t.cell.l2cols.includes(k));
+      save(); t.update();
+    });
+    p.querySelector('[data-g]').onclick = e => {
+      t.cell.l2group = !t.cell.l2group;
+      if (!t.cell.l2group) delete t.cell.l2group;
+      e.currentTarget.querySelector('.check').classList.toggle('on', !!t.cell.l2group);
+      save(); t.update();
+    };
   });
 }
 
