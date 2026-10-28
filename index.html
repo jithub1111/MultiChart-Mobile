@@ -236,8 +236,14 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .nitem b { display: block; font-weight: 500; line-height: 1.3; }
 .nitem small, .frow small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .fstats { columns: 2 230px; column-gap: 16px; padding: 4px 10px 10px; }
+.ffloat { padding: 6px 10px 4px; border-bottom: 1px solid var(--line); }
+.ffloat table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ffloat th { font-size: 10px; font-weight: 600; color: var(--muted); text-align: right; padding: 0 0 3px 10px; }
+.ffloat td { padding: 2px 0 2px 10px; text-align: right; font-family: var(--num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ffloat td:first-child { padding-left: 0; text-align: left; color: var(--muted); font-family: var(--ui); white-space: normal; }
+.ffloat .fnote { padding: 6px 0 2px; }
 .fgroup { break-inside: avoid; padding-top: 6px; }
-.fgroup h5, .fprof h5 { margin: 4px 0; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.fgroup h5, .fprof h5, .ffloat h5 { margin: 4px 0; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; margin: 0; font-size: 12px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; text-align: right; font-family: var(--num); font-variant-numeric: tabular-nums; }
@@ -311,9 +317,12 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 }
 
 /* Watchlist panel */
-.wl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wl {
+  position: absolute; inset: 0; overflow: hidden auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums;
+  --w-sym: 1.15fr; --w-name: 1.7fr; --w-last: 1fr; --w-chg: 1fr; --w-pct: 1fr; --w-vol: 1fr;  /* column widths; dragging a heading's edge changes them */
+}
 .wr {
-  display: grid; grid-template-columns: minmax(0, 1.15fr) repeat(4, minmax(0, 1fr)); align-items: center; gap: 6px;
+  display: grid; grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)) minmax(0, var(--w-vol)); align-items: center; gap: 6px;
   height: 24px; padding: 0 6px; white-space: nowrap; border-bottom: 1px solid var(--grid); cursor: pointer;
 }
 .wr > * { overflow: hidden; text-overflow: ellipsis; }
@@ -326,8 +335,13 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .wr.bad .ws { color: var(--muted); text-decoration: line-through; }
 .wr.bad .wp { color: var(--muted); font-family: var(--ui); font-size: 11px; }
 .wr.wh { position: sticky; top: 0; z-index: 1; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: 11px; font-weight: 600; border-bottom-color: var(--line); }
-.wh [data-k] { user-select: none; -webkit-user-select: none; }
-.wh [data-dir="asc"]::after { content: " \25B2"; font-size: 8px; } .wh [data-dir="desc"]::after { content: " \25BC"; font-size: 8px; }
+.wh [data-k] { user-select: none; -webkit-user-select: none; position: relative; overflow: visible; }
+.wh .wt { display: block; overflow: hidden; text-overflow: ellipsis; }
+.wh [data-dir="asc"] .wt::after { content: " \25B2"; font-size: 8px; } .wh [data-dir="desc"] .wt::after { content: " \25BC"; font-size: 8px; }
+.wgrab { position: absolute; top: -4px; bottom: -4px; right: -12px; width: 18px; z-index: 1; cursor: col-resize; touch-action: none; }
+.wgrab::after { content: ""; position: absolute; top: 5px; bottom: 5px; left: 8px; width: 1px; background: var(--line); }
+.wgrab.on::after { background: var(--accent); width: 2px; }
+.wh > :last-child .wgrab { display: none; }
 .wedit { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 6px; background: var(--head); border-bottom: 1px solid var(--line); font-family: var(--ui); font-size: 11.5px; color: var(--muted); }
 .wedit .btn { height: 24px; padding: 0 10px; font-size: 12px; }
 .wl.editing .wr { grid-template-columns: 22px minmax(0, .8fr) minmax(0, 1.6fr) 26px; cursor: default; }
@@ -342,9 +356,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .wempty .btn { margin-top: 8px; }
 .picks button:disabled { opacity: .35; }
 .sym > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container (min-width: 560px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, .9fr) minmax(0, 1.7fr) repeat(4, minmax(0, 1fr)); } .wl:not(.editing) .wr .wn { display: block; } }
-@container (max-width: 330px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, 1.15fr) repeat(3, minmax(0, 1fr)); } .wr .wv { display: none; } }
-@container (max-width: 240px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, 1.1fr) repeat(2, minmax(0, 1fr)); } .wr .wc { display: none; } }
+@container (min-width: 560px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-name)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)) minmax(0, var(--w-vol)); } .wl:not(.editing) .wr .wn { display: block; } }
+@container (max-width: 330px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)); } .wr .wv { display: none; } }
+@container (max-width: 240px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-pct)); } .wr .wc { display: none; } }
 
 /* app zoom: scale the interface text and controls; chart canvases stay at native size and scale their own text */
 .bar, .tabs, .th, .tbl, .fund, .wl, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
@@ -1211,10 +1225,11 @@ async function fetchFund(part, sym) {
   const q = encodeURIComponent(sym);
   try {
     if (part === 'stats') {
-      const [i, qt] = await Promise.allSettled([helper(`/instruments?symbol=${q}&projection=fundamental`), helper(`/quotes?symbols=${q}&fields=quote,fundamental,reference`)]);
+      const [i, qt, fl] = await Promise.allSettled([helper(`/instruments?symbol=${q}&projection=fundamental`), helper(`/quotes?symbols=${q}&fields=quote,fundamental,reference`), helper(`/float?symbol=${q}`)]);
       if (i.status === 'rejected' && qt.status === 'rejected') throw i.reason;
       const inst = (i.status === 'fulfilled' && (i.value.instruments || [])[0]) || {}, qq = (qt.status === 'fulfilled' && qt.value[sym]) || {};
-      return { name: inst.description || (qq.reference && qq.reference.description) || '', exchange: inst.exchange || (qq.reference && qq.reference.exchangeName) || '', cusip: inst.cusip || '', f: inst.fundamental || {}, qf: qq.fundamental || {}, quote: qq.quote || {} };
+      const float = fl.status === 'fulfilled' ? fl.value : { errors: { helper: fl.reason.code === 'notfound' ? 'old' : fl.reason.message } };
+      return { name: inst.description || (qq.reference && qq.reference.description) || '', exchange: inst.exchange || (qq.reference && qq.reference.exchangeName) || '', cusip: inst.cusip || '', f: inst.fundamental || {}, qf: qq.fundamental || {}, quote: qq.quote || {}, float };
     }
     if (part === 'news') {
       // The company name widens the news search, so look it up first when it's quick to get.
@@ -1286,19 +1301,38 @@ function statsView(d, sym) {
     ['Price and volume', [['52-week high', fNum(f.high52 || qt['52WeekHigh'])], ['52-week low', fNum(f.low52 || qt['52WeekLow'])],
       ['Avg volume, 10 days', fBig(f.avg10DaysVolume || f.vol10DayAvg || qf.avg10DaysVolume)], ['Avg volume, 3 months', fBig(f.avg3MonthVolume || f.vol3MonthAvg)],
       ['Avg volume, 1 year', fBig(qf.avg1YearVolume)], ['Beta', fNum(f.beta)]]],
-    ['Valuation', [['Market cap', cap && '$' + fBig(cap)], ['Shares outstanding', fBig(shares)], ['Float', fBig(flt)], ['P/E', fNum(f.peRatio || qf.peRatio)],
+    ['Valuation', [['Market cap', cap && '$' + fBig(cap)], ['P/E', fNum(f.peRatio || qf.peRatio)],
       ['PEG', fNum(f.pegRatio)], ['Price/book', fNum(f.pbRatio)], ['Price/sales', fNum(f.prRatio)], ['Price/cash flow', fNum(f.pcfRatio)]]],
     ['Earnings', [['EPS (TTM)', fNum(f.epsTTM || f.eps || qf.eps)], ['EPS change (TTM)', fPct(f.epsChangePercentTTM)], ['Revenue change (TTM)', fPct(f.revChangeTTM)],
       ['Book value per share', fNum(f.bookValuePerShare)], ['Last earnings', fDay(qf.lastEarningsDate)]]],
     ['Margins and returns', [['Gross margin', fPct(f.grossMarginTTM)], ['Operating margin', fPct(f.operatingMarginTTM)], ['Net margin', fPct(f.netMarginTTM || f.netProfitMarginTTM)],
       ['Return on equity', fPct(f.returnOnEquity)], ['Return on assets', fPct(f.returnOnAssets)]]],
     ['Balance sheet', [['Current ratio', fNum(f.currentRatio)], ['Quick ratio', fNum(f.quickRatio)], ['Debt/equity', fNum(f.totalDebtToEquity)], ['Interest coverage', fNum(f.interestCoverage)]]],
-    ['Short interest', [['Short % of float', fPct(f.shortIntToFloat)], ['Days to cover', fNum(f.shortIntDayToCover)]]],
     ['Dividends', [['Yield', fPct(f.dividendYield || qf.divYield)], ['Yearly amount', fNum(f.dividendAmount || qf.divAmount)],
       ['Ex-dividend date', fDay(f.nextDividendDate || qf.nextDivExDate || f.dividendDate || qf.divExDate)], ['Pay date', fDay(f.nextDividendPayDate || qf.nextDivPayDate || f.dividendPayDate)]]]
   ].filter(([, rows]) => rows.some(r => r[1]));
-  if (!groups.length) return `<p class="fnote">Schwab has no key statistics for ${esc(sym)}.</p>`;
-  return `<div class="fstats">${groups.map(([h, rows]) => `<div class="fgroup"><h5>${h}</h5>${kvList(rows)}</div>`).join('')}</div><p class="fnote">From Schwab.</p>`;
+  const fl = floatView(d.float || {}, sym, { float: flt, outstanding: shares, shortFloat: +f.shortIntToFloat || null, shortRatio: +f.shortIntDayToCover || null });
+  if (!groups.length && !fl) return `<p class="fnote">Schwab has no key statistics for ${esc(sym)}.</p>`;
+  return fl + `<div class="fstats">${groups.map(([h, rows]) => `<div class="fgroup"><h5>${h}</h5>${kvList(rows)}</div>`).join('')}</div><p class="fnote">From Schwab, except float and short interest.</p>`;
+}
+// Float and short interest side by side from Yahoo Finance, Finviz and Schwab, since they often disagree.
+function floatView(d, sym, schwab) {
+  const err = d.errors || {}, src = [['Yahoo', d.yahoo], ['Finviz', d.finviz], ['Schwab', schwab]];
+  const pctOf = x => x && x.float && x.outstanding ? x.float / x.outstanding * 100 : null;
+  const rows = [
+    ['Float', x => fBig(x.float)], ['Shares outstanding', x => fBig(x.outstanding)], ['Float % of shares', x => fPct(pctOf(x))],
+    ['Short interest', x => fBig(x.short)], ['Short % of float', x => fPct(x.shortFloat)], ['Days to cover', x => fNum(x.shortRatio)],
+    ['Insiders own', x => fPct(x.insiders)], ['Institutions own', x => fPct(x.institutions)]
+  ].map(([label, fmt]) => [label, src.map(([, x]) => (x && fmt(x)) || '')]).filter(([, v]) => v.some(Boolean));
+  const notes = [];
+  if (err.helper) notes.push(err.helper === 'old' ? 'Float from Yahoo and Finviz shows once your Schwab helper installs its latest update, a minute or two after this change is merged.' : `Couldn't get float data: ${esc(err.helper)}`);
+  [['yahoo', 'Yahoo Finance'], ['finviz', 'Finviz']].forEach(([k, name]) => {
+    if (err[k]) notes.push(`${name} didn't answer (${esc(err[k])}).`);
+    else if (!err.helper && !(d[k] && Object.values(d[k]).some(v => v != null))) notes.push(`${name} has no float data for ${esc(sym)}${k === 'finviz' ? ' (it skips over-the-counter stocks)' : ''}.`);
+  });
+  if (d.yahoo && d.yahoo.shortDate) notes.push(`Yahoo's short interest is as of ${fDay(new Date(d.yahoo.shortDate).toISOString())}.`);
+  if (!rows.length && !notes.length) return '';
+  return `<div class="ffloat"><h5>Float and short interest</h5>${rows.length ? `<table><tr><th></th>${src.map(([n]) => `<th>${n}</th>`).join('')}</tr>${rows.map(([label, v]) => `<tr><td>${label}</td>${v.map(x => `<td>${x || '—'}</td>`).join('')}</tr>`).join('')}</table>` : ''}${notes.length ? `<p class="fnote">${notes.join(' ')}</p>` : ''}</div>`;
 }
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const capsToTitle = t => String(t || '').replace(/\b([A-Z])([A-Z']{2,})\b/g, (m, a, b) => a + b.toLowerCase());
@@ -1664,13 +1698,17 @@ class Tile {
       const wl = this.$('.wl');
       this.$('.wadd').addEventListener('click', e => wlAddPop(e.currentTarget, this));
       wl.addEventListener('click', e => {
+        if (e.target.closest('.wgrab') || Date.now() - (this.wResized || 0) < 400) return;
         const act = e.target.closest('[data-a]'), k = e.target.closest('[data-k]'), x = e.target.closest('.wx'), row = e.target.closest('.wr[data-s]');
         if (act) { if (act.dataset.a === 'done') { this.wediting = false; this.load(); } else wlAddPop(this.$('.wadd'), this); }
         else if (k) this.sortBy(k.dataset.k);
         else if (x) removeFromList(listFor(this.cell), row.dataset.s);
         else if (row && !this.wediting) pickTicker(this, row.dataset.s);
       });
-      wl.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) this.dragRow(e, g); });
+      wl.addEventListener('pointerdown', e => {
+        const g = e.target.closest('.grip'), r = e.target.closest('.wgrab');
+        if (g) this.dragRow(e, g); else if (r) this.resizeCol(e, r);
+      });
     } else if (this.kind === 'fund') {
       this.$('.body').innerHTML = `<div class="fund"><nav class="ftabs">${Object.entries(FUND_TABS).map(([k, l]) => `<button data-t="${k}"><span class="long">${l}</span><span class="short">${FUND_SHORT[k]}</span></button>`).join('')}</nav><div class="fbody"></div></div><div class="msg" hidden></div>`;
       this.$('.ftabs').addEventListener('click', e => {
@@ -1698,7 +1736,7 @@ class Tile {
     if (key !== this.wKey) {
       const [sk, sd] = sort.split(':'), top = wl.scrollTop;
       const head = ed ? '<div class="wedit"><span>Drag the dots to reorder. ✕ removes.</span><button class="btn" data-a="done">Done</button></div>'
-        : `<div class="wr wh">${WCOLS.map(([k, label, c]) => `<span class="${c}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}>${label}</span>`).join('')}</div>`;
+        : `<div class="wr wh">${WCOLS.map(([k, label, c]) => `<span class="${c}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}><span class="wt">${label}</span><i class="wgrab" aria-hidden="true"></i></span>`).join('')}</div>`;
       const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${WCOLS.map(([, , c]) => `<span class="${c}">${c === 'ws' ? esc(s) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
       wl.classList.toggle('editing', ed);
       wl.innerHTML = head + (l.syms.length ? `<div class="wrows">${rows}</div>` : `<p class="wempty">${esc(l.name)} is empty. Add the tickers you want to keep an eye on, then tap one to open it on the linked charts.<br><button class="btn primary" data-a="add">Add tickers</button></p>`);
@@ -1709,6 +1747,7 @@ class Tile {
     }
     const g = this.cell.link;
     wl.style.setProperty('--wsel', g ? LINK_COLORS[g] : css('--accent'));
+    WCOLS.forEach(([k]) => { const w = (this.cell.wcols || {})[k]; if (w > 0) wl.style.setProperty('--w-' + k, w.toFixed(3) + 'fr'); else wl.style.removeProperty('--w-' + k); });
     this.updateWatch();
   }
   updateWatch() {
@@ -1752,6 +1791,32 @@ class Tile {
     const [ck, cd] = (this.cell.wsort || '').split(':'), first = k === 'sym' || k === 'name' ? 'asc' : 'desc';
     this.cell.wsort = ck !== k ? k + ':' + first : cd === first ? k + ':' + (first === 'asc' ? 'desc' : 'asc') : '';
     save(); this.load();
+  }
+  // Drag the edge of a column heading to trade width with the column to its right. Widths are shares
+  // of the row (in units of the usual widths), so they hold as the panel resizes.
+  resizeCol(e, grab) {
+    e.preventDefault();
+    const cells = [...grab.closest('.wh').children].filter(c => getComputedStyle(c).display !== 'none');
+    const i = cells.indexOf(grab.parentElement);
+    if (i < 0 || i >= cells.length - 1) return;
+    const keys = cells.map(c => c.dataset.k), px = cells.map(c => c.getBoundingClientRect().width);
+    const unit = px.reduce((a, b) => a + b, 0) / keys.reduce((a, k) => a + parseFloat(getComputedStyle(this.$('.wl')).getPropertyValue('--w-' + k)), 0);
+    const w = Object.fromEntries(keys.map((k, j) => [k, px[j] / unit])), wl = this.$('.wl'), x0 = e.clientX, a = keys[i], b = keys[i + 1], min = 28;
+    try { grab.setPointerCapture(e.pointerId); } catch (err) {}
+    grab.classList.add('on');
+    const move = ev => {
+      const d = Math.max(min - px[i], Math.min(px[i + 1] - min, ev.clientX - x0));
+      w[a] = (px[i] + d) / unit; w[b] = (px[i + 1] - d) / unit;
+      [a, b].forEach(k => wl.style.setProperty('--w-' + k, w[k].toFixed(3) + 'fr'));
+    };
+    const up = () => {
+      grab.removeEventListener('pointermove', move); grab.removeEventListener('pointerup', up); grab.removeEventListener('pointercancel', up);
+      grab.classList.remove('on');
+      this.cell.wcols = { ...this.cell.wcols, ...w };
+      this.wResized = Date.now();
+      save();
+    };
+    grab.addEventListener('pointermove', move); grab.addEventListener('pointerup', up); grab.addEventListener('pointercancel', up);
   }
   // Drag a row by its dots. The neighbours move around it, so the finger keeps hold of the row.
   dragRow(e, grip) {
@@ -2288,7 +2353,7 @@ function tileMenu(anchor, t) {
   openPop(anchor, `
     <div class="menu">
       ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
-      ${t.kind === 'watch' ? '<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button>'
+      ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
         : `<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
       <hr>
@@ -2300,6 +2365,8 @@ function tileMenu(anchor, t) {
     if (v) v.onclick = () => { t.cell.vwap = !t.cell.vwap; t.load(); save(); closePop(); };
     const we = p.querySelector('[data-a=wedit]'), wa = p.querySelector('[data-a=wladd]');
     if (we) we.onclick = () => { closePop(); t.wediting = true; t.load(); };
+    const wc = p.querySelector('[data-a=wcols]');
+    if (wc) wc.onclick = () => { closePop(); delete t.cell.wcols; save(); t.load(); };
     if (wa) wa.onclick = () => {
       closePop();
       const l = activeList(), sym = t.cell.sym, seen = [...tiles.values()].some(x => x.kind === 'watch');
