@@ -585,9 +585,16 @@ function aggWeekly(daily) {
 }
 function bars(sym, tf) {
   const s = store(sym), k = TF[tf];
-  if (k === 'D') return s.daily.map(b => ({ ...b }));
-  if (k === 'W') return aggWeekly(s.daily);
-  return aggIntraday(s.m1, k);
+  return clean(k === 'D' ? s.daily.map(b => ({ ...b })) : k === 'W' ? aggWeekly(s.daily) : aggIntraday(s.m1, k));
+}
+// The chart needs bars with real numbers, each later than the one before.
+function clean(list) {
+  let t = -Infinity;
+  return list.filter(b => {
+    const ok = b.time > t && [b.open, b.high, b.low, b.close].every(Number.isFinite);
+    if (ok) { t = b.time; if (!Number.isFinite(b.volume)) b.volume = 0; }
+    return ok;
+  });
 }
 function vwap(list) {
   let d = -1, pv = 0, vv = 0;
@@ -595,7 +602,7 @@ function vwap(list) {
     const day = Math.floor(b.time / 86400);
     if (day !== d) { d = day; pv = 0; vv = 0; }
     pv += (b.high + b.low + b.close) / 3 * b.volume; vv += b.volume;
-    const pt = { time: b.time, value: pv / vv };
+    const pt = { time: b.time, value: vv ? pv / vv : b.close };
     if (vv === b.volume && d !== -1) pt.color = 'rgba(0,0,0,0)';
     return pt;
   });
@@ -668,7 +675,8 @@ function etSec(ms) {
   let off = tzOff.get(hr);
   if (off === undefined) {
     const p = Object.fromEntries(tzParts.formatToParts(new Date(hr * 36e5)).map(x => [x.type, x.value]));
-    off = Date.UTC(+p.year, p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - hr * 36e5;
+    // Some browsers write midnight as hour 24 of the same day.
+    off = Date.UTC(+p.year, p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - hr * 36e5;
     tzOff.set(hr, off);
   }
   return Math.floor((ms + off) / 1000);
@@ -1108,7 +1116,11 @@ class SessionShade {
   paneViews() { return [this]; }
   zOrder() { return 'bottom'; }
   renderer() { return this; }
+  // A problem here must never stop the chart from drawing its candles, so it is reported and skipped.
   draw(target) {
+    try { this.paint(target); } catch (e) { reportError(e); }
+  }
+  paint(target) {
     const t = this.tile, L = t.list, ts = (this.chart || t.chart).timeScale(), r = ts.getVisibleLogicalRange();
     if (!shadeFill || !t.intraday || !L || !L.length || !r) return;
     const half = ts.options().barSpacing / 2, end = Math.min(L.length - 1, Math.ceil(r.to));
@@ -1427,7 +1439,8 @@ class Tile {
       body.addEventListener('pointerdown', () => { this.autoFit = false; }, true);
       body.addEventListener('wheel', () => { this.autoFit = false; }, { capture: true, passive: true });
       // The plot area changes width when the panel resizes or the price labels grow or shrink.
-      (this.vchart || this.chart).timeScale().subscribeSizeChange(() => { if (this.autoFit && this.list) this.refit(); });
+      // Refit on the next frame: the chart reports the new size before it has finished applying it.
+      (this.vchart || this.chart).timeScale().subscribeSizeChange(() => requestAnimationFrame(() => { if (this.autoFit && this.list) this.refit(); }));
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
@@ -1531,6 +1544,7 @@ class Tile {
       this.candles.setData(list);
       this.volume.setData(this.volData(list));
       this.vw.setData(this.showVwap ? vwap(list) : []);
+      this.lastT = list.length ? list[list.length - 1].time : -Infinity;
       [this.chart, this.vchart].forEach(c => c && c.applyOptions({ timeScale: { timeVisible: this.intraday, secondsVisible: false } }));
       this.alignScales();
       if (!keepView) {
@@ -1551,7 +1565,9 @@ class Tile {
     const p = last(s), d = dec(p);
     if (this.kind === 'chart') {
       const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
-      if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); }
+      // The chart only takes a bar at or after its newest one; anything else means the history changed.
+      if (lb && lb.time < this.lastT) return this.load(true);
+      if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
       if (this.autoFit && list.length !== this.fitN) this.refit();
       this.alignScales();
       const lg = this.$('.legend');
@@ -2340,6 +2356,18 @@ function beep() {
     o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.5);
   } catch (e) {}
 }
+// Unexpected errors show once as a message, so a screenshot tells Claude what went wrong.
+const reported = new Set();
+function reportError(e) {
+  const msg = String((e && (e.message || e.reason && e.reason.message || e.reason)) || e || '');
+  if (!msg || /ResizeObserver|^Script error|NotAllowedError|AbortError|play\(\)/i.test(msg) || reported.has(msg)) return;
+  reported.add(msg);
+  const where = ((e && (e.error || e.reason || e).stack) || '').split('\n').find(l => /index\.html|lightweight/.test(l)) || '';
+  console.error(e);
+  toast(`Something went wrong: <b>${esc(msg)}</b>${where ? `<br><small>${esc(where.trim().slice(0, 140))}</small>` : ''}<br>If the charts look wrong, send Claude a screenshot of this.`, true);
+}
+addEventListener('error', reportError);
+addEventListener('unhandledrejection', reportError);
 function toast(html, sticky) {
   const el = document.createElement('div');
   el.className = 'toast';
