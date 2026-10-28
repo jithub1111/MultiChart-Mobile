@@ -194,6 +194,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .msg.err { color: var(--fg); }
 .simnote { position: sticky; top: 0; z-index: 1; padding: 2px 6px; font-family: system-ui, sans-serif; font-size: 10px; color: var(--muted); background: var(--head); border-bottom: 1px solid var(--line); }
 .tbl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
+.duo { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1px; background: var(--line); }
+.duo > .tbl { position: relative; inset: auto; background: var(--panel); container-type: size; }
 .book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 100%; }
 .side { background: var(--panel); }
 .r { display: grid; grid-template-columns: minmax(0, 1fr) 7ch 7ch; gap: 6px; padding: 2px 6px; white-space: nowrap; }
@@ -241,6 +243,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .preset div { display: flex; gap: 2px; }
 .preset span { flex: 1; border-radius: 1.5px; background: #5d6875; }
 .preset span.l { background: var(--l2-1); } .preset span.t { background: #3a4552; }
+.preset span.b { background: linear-gradient(90deg, var(--l2-1) 0 58%, #3a4552 58%); }
 .symform { display: flex; gap: 6px; padding: 0 4px 8px; }
 .symform input {
   flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px;
@@ -1014,7 +1017,7 @@ const ICON = {
   more: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>',
   draw: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 13.5l11-9"/><circle cx="2.5" cy="13.5" r="1.3" fill="currentColor"/><circle cx="13.5" cy="4.5" r="1.3" fill="currentColor"/><path d="M1.5 8h4M10.5 12h4" stroke-dasharray="1.5 1.5"/></svg>'
 };
-const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales' };
+const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S' };
 function chartColors() {
   const muted = css('--muted'), line = css('--line'), grid = css('--grid');
   return {
@@ -1090,6 +1093,16 @@ class SessionShade {
       }
     });
   }
+}
+
+function bookHtml(s, d) {
+  const rows = (list, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
+    list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
+  return (s.live && !s.realBook ? `<div class="simnote">${dataCfg.mode === 'schwab' ? 'Waiting for Schwab\'s book · depth simulated' : 'Depth simulated · top is IEX bid/ask'}</div>` : '') + `<div class="book">${rows(s.book.bids, 'Bid')}${rows(s.book.asks, 'Ask')}</div>`;
+}
+function tapeHtml(s, d) {
+  return `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
+    s.prints.slice(0, 80).map(x => `<div class="r ${x.side}${x.size >= 2000 ? ' big' : ''}"><span>${x.t}</span><span>${x.price.toFixed(d)}</span><span>${x.size.toLocaleString()}</span></div>`).join('') + '</div>';
 }
 
 class Tile {
@@ -1234,7 +1247,8 @@ class Tile {
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
     } else {
-      this.$('.body').innerHTML = '<div class="tbl"></div><div class="msg" hidden></div>';
+      // The Level II + T&S box shows both side by side for one symbol.
+      this.$('.body').innerHTML = (this.kind === 'lts' ? '<div class="duo"><div class="tbl"></div><div class="tbl"></div></div>' : '<div class="tbl"></div>') + '<div class="msg" hidden></div>';
     }
     this.load();
   }
@@ -1292,7 +1306,7 @@ class Tile {
     msg.classList.toggle('err', !!s.error);
     if (!ready(s)) {
       if (this.chart) { this.list = []; this.candles.setData([]); this.volume.setData([]); this.vw.setData([]); this.$('.legend').innerHTML = ''; this.watermark(true); this.paintDrawings(); }
-      else this.$('.tbl').innerHTML = '';
+      else this.el.querySelectorAll('.tbl').forEach(x => { x.innerHTML = ''; });
       ['.last', '.c1', '.c2', '.bid', '.ask'].forEach(k => { this.$(k).textContent = k === '.last' ? '—' : ''; });
       return;
     }
@@ -1334,13 +1348,10 @@ class Tile {
       else lg.innerHTML = '';
       this.watermark();
       this.paintDrawings();
-    } else if (this.kind === 'l2') {
-      const rows = (list, cls, label) => `<div class="side"><div class="r hd"><span>Ex</span><span>${label}</span><span>Size</span></div>` +
-        list.map(o => `<div class="r lv${Math.min(o.lv, 5)}"><span>${o.ex}</span><span>${o.price.toFixed(d)}</span><span>${o.size.toLocaleString()}</span></div>`).join('') + '</div>';
-      this.$('.tbl').innerHTML = (s.live && !s.realBook ? `<div class="simnote">${dataCfg.mode === 'schwab' ? 'Waiting for Schwab\'s book · depth simulated' : 'Depth simulated · top is IEX bid/ask'}</div>` : '') + `<div class="book">${rows(s.book.bids, 'bidp', 'Bid')}${rows(s.book.asks, 'askp', 'Ask')}</div>`;
     } else {
-      this.$('.tbl').innerHTML = `<div class="tape"><div class="r hd"><span>Time</span><span>Price</span><span>Size</span></div>` +
-        s.prints.slice(0, 80).map(x => `<div class="r ${x.side}${x.size >= 2000 ? ' big' : ''}"><span>${x.t}</span><span>${x.price.toFixed(d)}</span><span>${x.size.toLocaleString()}</span></div>`).join('') + '</div>';
+      const [a, b] = this.el.querySelectorAll('.tbl');
+      if (this.kind === 'ts') a.innerHTML = tapeHtml(s, d);
+      else { a.innerHTML = bookHtml(s, d); if (b) b.innerHTML = tapeHtml(s, d); }
     }
     const ch = s.prevClose ? p - s.prevClose : 0, pct = s.prevClose ? ch / s.prevClose * 100 : 0, sign = ch >= 0 ? '+' : '', cls = ch >= 0 ? 'up' : 'down';
     const lastEl = this.$('.last');
@@ -1479,16 +1490,19 @@ const DEFAULT_CHARTS = [
   { sym: 'HGRAF', tf: '1m' }, { sym: 'GLD', tf: '2m' }, { sym: 'UWMC', tf: '1m' }, { sym: 'IAUX', tf: '1m' },
   { sym: 'SPY', tf: '5m' }, { sym: 'QQQ', tf: '15m' }
 ];
-// Each preset is rows of panel codes: c = chart, l = Level II, t = Time & Sales.
+// Each preset is rows of panel codes: c = chart, l = Level II, t = Time & Sales, b = both in one box.
 const PRESETS = [
   ['c'], ['cc'], ['c', 'c'], ['c', 'cc'], ['cc', 'cc'], ['cc', 'cc', 'cc'],
   ['cc', 'cc', 'cc', 'cc'], ['cccc', 'cccc'],  // 8 charts: 2 across for portrait, 4 across for landscape
-  ['c', 'lt'], ['c', 'c', 'lt'], ['cc', 'll', 'tt'], ['cc', 'cc', 'll', 'tt']
+  ['c', 'lt'], ['c', 'c', 'lt'], ['cc', 'll', 'tt'], ['cc', 'cc', 'll', 'tt'],
+  ['c', 'b'], ['c', 'c', 'b'], ['cc', 'bb']  // b = Level II + T&S in one box
 ];
-const CODE = { c: 'chart', l: 'l2', t: 'ts' };
+const CODE = { c: 'chart', l: 'l2', t: 'ts', b: 'lts' };
 let nextId = 1;
 const newCell = (kind, extra) => ({ id: 'p' + nextId++, kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
 const isLeaf = n => !!n.kind;
+// A Level II and a Time & Sales side by side. It stays one unit, so turning the layout keeps them together.
+const isPair = n => !isLeaf(n) && n.children.length === 2 && n.children.every(isLeaf) && n.children.map(c => c.kind).sort().join() === 'l2,ts';
 
 let state = { root: null, chartsOnly: false };
 function leaves(n = state.root, out = []) { if (!n) return out; if (isLeaf(n)) out.push(n); else n.children.forEach(c => leaves(c, out)); return out; }
@@ -1507,7 +1521,7 @@ function normalize(n) {
   if (!n || isLeaf(n)) return n;
   const kids = [];
   n.children.map(normalize).filter(Boolean).forEach(c => {
-    if (!isLeaf(c) && c.dir === n.dir) {
+    if (!isLeaf(c) && c.dir === n.dir && !isPair(c)) {
       const sum = c.children.reduce((a, g) => a + g.size, 0);
       c.children.forEach(g => { g.size = c.size * g.size / sum; kids.push(g); });
     } else kids.push(c);
@@ -1519,7 +1533,7 @@ function normalize(n) {
 }
 
 function fromPreset(shape) {
-  const pool = { chart: [], l2: [], ts: [] };
+  const pool = { chart: [], l2: [], ts: [], lts: [] };
   allCells().forEach(c => pool[c.kind].push(c));
   let ci = 0;
   const rows = shape.map(code => [...code].map(ch => {
@@ -1542,7 +1556,7 @@ function fromPreset(shape) {
   }));
   return normalize({
     dir: 'v', size: 1,
-    children: rows.map((r, i) => ({ dir: 'h', size: shape[i].includes('c') ? 3 : 1.5, children: r }))
+    children: rows.map((r, i) => ({ dir: 'h', size: shape[i].includes('c') ? 3 : shape[i].includes('b') ? 2 : 1.5, children: r }))
   });
 }
 function freeLink(extra = new Set()) {
@@ -1673,7 +1687,7 @@ function insertPanel(target, side, kind) {
   }
   const dir = side === 'left' || side === 'right' ? 'h' : 'v';
   const before = side === 'left' || side === 'top';
-  const share = kind === 'chart' ? 1 : 0.6;
+  const share = kind === 'l2' || kind === 'ts' ? 0.6 : 1;
   const p = parentOf(target);
   if (p && p.dir === dir) {
     const total = target.size;
@@ -1781,12 +1795,12 @@ function symbolPop(anchor, t) {
 }
 
 function layoutPop(anchor) {
-  const cls = { c: '', l: 'l', t: 't' };
+  const cls = { c: '', l: 'l', t: 't', b: 'b' };
   closePop();
   openPop(anchor, `
     <h4>Layout</h4>
     <div class="presets">${PRESETS.map((shape, i) => `<button class="preset" data-i="${i}" aria-label="Layout ${i + 1}">${shape.map(code => `<div style="flex:${code.includes('c') ? 2 : 1}">${[...code].map(ch => `<span class="${cls[ch]}"></span>`).join('')}</div>`).join('')}</button>`).join('')}</div>
-    <p class="note">Grey is a chart, yellow is Level II, dark grey is Time & Sales.</p>
+    <p class="note">Grey is a chart, yellow is Level II, dark grey is Time & Sales, and half and half is both in one box.</p>
     <h4>My layouts</h4>
     ${savedLayouts.length ? `<div class="saved">${savedLayouts.map((l, i) => `<div class="srow"><button data-load="${i}">${esc(l.name)}</button><button data-del="${i}" aria-label="Delete ${esc(l.name)}">✕</button></div>`).join('')}</div>` : '<p class="empty">No saved layouts yet.</p>'}
     <form class="symform" id="saveLayout"><input id="layoutName" maxlength="40" placeholder="Name this layout" aria-label="Layout name" style="text-transform:none;font-family:var(--ui);font-weight:500"><button class="btn primary" type="submit">Save</button></form>`, p => {
@@ -1824,6 +1838,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
+      <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
     </div>`, p => {
@@ -1832,13 +1847,18 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
+    p.querySelector('[data-a=rotate]').onclick = () => {
+      rotateOn = !rotateOn; closePop();
+      try { localStorage.setItem(ROTATE_KEY, rotateOn ? '1' : '0'); } catch (e) {}
+      if (orientLayout()) render();
+    };
     p.querySelector('[data-a=layout]').onclick = () => layoutPop(anchor);
     p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
   });
 });
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
-document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; render(); });
-document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; render(); });
+document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; orientLayout(); render(); });
+document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; orientLayout(); render(); });
 
 /* ---------- workspace tabs ---------- */
 function renderTabs() {
@@ -1904,8 +1924,84 @@ function switchTab(i) {
   closePop();
   maxed = null; editing = false;
   activeTab = i; state = tabs[i];
+  orientLayout();
   render();
 }
+/* ---------- the layout follows the phone ---------- */
+// On a phone or tablet the layout turns with the screen: 2 across by 4 down in portrait becomes 4 across
+// by 2 down in landscape and back. A grid of charts keeps its reading order; other layouts swap rows
+// and columns, with Level II and Time & Sales kept side by side. Each tab remembers how it looked in
+// each orientation, so going back restores your sizes.
+const ROTATE_KEY = 'multichart-rotate-v1';
+let rotateOn = true;
+try { rotateOn = localStorage.getItem(ROTATE_KEY) !== '0'; } catch (e) {}
+const isLandscape = () => innerWidth > innerHeight;
+// How many panels the layout shows across ('h') or down ('v'). A Level II + T&S pair counts as one.
+function span(n, dir) {
+  if (isLeaf(n)) return visible(n) ? 1 : 0;
+  if (isPair(n)) return state.chartsOnly ? 0 : 1;
+  return n.children.reduce((a, c) => n.dir === dir ? a + span(c, dir) : Math.max(a, span(c, dir)), 0);
+}
+// The layout as rows of charts, if it is an even grid made only of charts.
+function chartGrid(root) {
+  if (!root || isLeaf(root)) return null;
+  const rows = root.dir === 'v' ? root.children.map(r => isLeaf(r) ? [r] : r.children.every(isLeaf) ? r.children : null)
+    : root.children.every(isLeaf) ? [root.children] : null;
+  if (!rows || rows.some(r => !r) || rows.some(r => r.length !== rows[0].length) || rows.flat().some(c => c.kind !== 'chart')) return null;
+  return rows;
+}
+// Swap rows and columns. A turned layout starts with charts at equal sizes and panels a bit smaller.
+function turn(n) {
+  if (isLeaf(n)) return n;
+  if (isPair(n)) { n.dir = 'h'; return n; }
+  let kids = n.children;
+  if (n.dir === 'h') {
+    kids = [];
+    for (let i = 0; i < n.children.length; i++) {
+      const a = n.children[i], b = n.children[i + 1];
+      if (b && isPair({ children: [a, b] })) { kids.push({ dir: 'h', size: a.size + b.size, children: [a, b] }); i++; }
+      else kids.push(a);
+    }
+  }
+  const dir = n.dir === 'h' ? 'v' : 'h';
+  kids = kids.map(turn);
+  kids.forEach(k => {
+    const cells = leaves(k);
+    k.size = cells.some(c => c.kind === 'chart') || (dir === 'h' && (isPair(k) || cells.some(c => c.kind === 'lts'))) ? 1 : 0.6;
+  });
+  return { dir, size: n.size, children: kids };
+}
+const outline = n => isLeaf(n) ? { id: n.id, size: n.size } : { dir: n.dir, size: n.size, children: n.children.map(outline) };
+const fromOutline = (o, byId) => o.id ? Object.assign(byId.get(o.id), { size: o.size }) : { dir: o.dir, size: o.size, children: o.children.map(x => fromOutline(x, byId)) };
+const panelsKey = n => leaves(n).map(c => c.id + c.kind).sort().join();
+function orientLayout() {
+  if (!rotateOn || !matchMedia('(pointer: coarse)').matches) return false;
+  const root = state.root;
+  if (!root || isLeaf(root)) return false;
+  const land = isLandscape(), across = span(root, 'h'), down = span(root, 'v');
+  if (land ? across >= down : down >= across) return false;
+  const key = panelsKey(root), memo = state.turns || (state.turns = {});
+  memo[land ? 'portrait' : 'landscape'] = { key, root: outline(root) };
+  const back = memo[land ? 'landscape' : 'portrait'];
+  if (back && back.key === key) state.root = fromOutline(back.root, new Map(leaves(root).map(c => [c.id, c])));
+  else {
+    const rows = chartGrid(root);
+    if (rows) {
+      const cells = rows.flat(), R = rows.length, C = rows[0].length, out = [];
+      cells.forEach(c => { c.size = 1; });
+      for (let i = 0; i < C; i++) out.push({ dir: 'h', size: 1, children: cells.slice(i * R, (i + 1) * R) });
+      state.root = normalize({ dir: 'v', size: 1, children: out });
+    } else state.root = normalize(turn(root));
+  }
+  save();
+  return true;
+}
+let wasLandscape = isLandscape();
+addEventListener('resize', () => {
+  if (isLandscape() === wasLandscape) return;
+  wasLandscape = isLandscape();
+  if (orientLayout()) render();
+});
 function newTab(copyFrom) {
   const n = tabs.length + 1;
   let name = 'Tab ' + n;
@@ -2342,6 +2438,7 @@ markCutout();
 if (screen.orientation) screen.orientation.addEventListener('change', markCutout);
 window.addEventListener('orientationchange', markCutout);
 window.addEventListener('resize', markCutout);
+orientLayout();
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();

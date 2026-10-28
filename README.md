@@ -6,7 +6,8 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 
 - **Layout** (pencil) button for edit mode: tap the + on any side of a panel to add a chart, Level II or Time & Sales there, or remove and change panels
 - Resize panels by dragging the bars between them
-- Panel types: **Chart**, **Level II** and **Time & Sales**
+- Panel types: **Chart**, **Level II**, **Time & Sales**, and **Level II + T&S** (both side by side in one box)
+- On a phone or tablet the layout turns with the screen: 2 across by 4 down in portrait becomes 4 across by 2 down in landscape, and Level II stays next to its Time & Sales. Each tab remembers its sizes for each orientation. Turn it off in Chart settings
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides the Level II and Time & Sales panels
 - **Colors** panel: change every color (backgrounds, borders, headers, candles, VWAP, each Level II price level, Time & Sales), or start from the Dark, DAS classic or Light theme
