@@ -192,8 +192,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 /* Level II and Time & Sales */
 .msg { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; zoom: var(--scale); pointer-events: none; }
 .msg.err { color: var(--fg); }
-.simnote { position: sticky; top: 0; z-index: 1; padding: 2px 6px; font-family: system-ui, sans-serif; font-size: 10px; color: var(--muted); background: var(--head); border-bottom: 1px solid var(--line); }
-.tbl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
+.simnote { position: sticky; top: 0; z-index: 1; padding: 2px 6px; font-family: system-ui, sans-serif; font-size: .84em; color: var(--muted); background: var(--head); border-bottom: 1px solid var(--line); }
+/* --tsize is the panel's own text size (Text size in its menu); the rows and columns grow with it */
+.tbl { position: absolute; inset: 0; overflow: auto; font-family: var(--num); font-size: calc(12px * var(--tsize, 1)); font-variant-numeric: tabular-nums; }
 .duo { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1px; background: var(--line); }
 .duo > .tbl { position: relative; inset: auto; background: var(--panel); container-type: size; }
 .book { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); min-height: 100%; }
@@ -201,7 +202,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .r { display: grid; grid-template-columns: minmax(0, 1fr) 7ch 7ch; gap: 6px; padding: 2px 6px; white-space: nowrap; }
 .r > span { overflow: hidden; text-overflow: ellipsis; }
 .r > span + span { text-align: right; }
-.r.hd { position: sticky; top: 0; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: 11px; font-weight: 600; z-index: 1; }
+.r.hd { position: sticky; top: 0; background: var(--head); color: var(--muted); font-family: var(--ui); font-size: .92em; font-weight: 600; z-index: 1; }
 .book .r:not(.hd) { color: var(--l2-text); border-bottom: 1px solid color-mix(in srgb, var(--l2-text) 18%, transparent); }
 .lv0 { background: var(--l2-1); } .lv1 { background: var(--l2-2); } .lv2 { background: var(--l2-3); }
 .lv3 { background: var(--l2-4); } .lv4 { background: var(--l2-5); } .lv5 { background: var(--l2-6); }
@@ -210,11 +211,11 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .tape .buy { color: var(--ts-buy); } .tape .sell { color: var(--ts-sell); } .tape .mid { color: var(--ts-mid); }
 .tape .big { font-weight: 700; }
 @container (max-width: 380px) {
-  .book .r { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; padding: 2px 4px; font-size: 10.5px; }
+  .book .r { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; padding: 2px 4px; font-size: .875em; }
   .book .r > span:first-child { display: none; }
   .book .r > span + span { text-align: left; }
   .book .r > span:last-child { text-align: right; }
-  .tape .r { grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; padding: 2px 4px; font-size: 11px; }
+  .tape .r { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 2px 4px; font-size: .92em; }  /* when squeezed, the time gives way before the price */
 }
 
 /* Fundamentals panel */
@@ -275,6 +276,11 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .menu .danger { color: var(--down); }
 .menu small { color: var(--muted); font-size: 12px; }
 .menu hr, .pop .zin > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.tsz { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px; font-size: 14px; }
+.tsz > span { flex: 1; }
+.tsz button { width: 36px; height: 32px; border: 1px solid var(--line); border-radius: 6px; background: var(--head); font-size: 13px; font-weight: 600; }
+.tsz button:disabled { opacity: .35; }
+.tsz b { min-width: 44px; text-align: center; font-weight: 500; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .check { width: 30px; height: 18px; border-radius: 99px; background: var(--line); position: relative; flex: none; }
 .check::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .check.on { background: var(--vwap); } .check.on::after { transform: translateX(12px); }
@@ -317,16 +323,13 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 }
 
 /* Watchlist panel */
-.wl {
-  position: absolute; inset: 0; overflow: hidden auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums;
-  --w-sym: 1.15fr; --w-name: 1.7fr; --w-last: 1fr; --w-chg: 1fr; --w-pct: 1fr; --w-vol: 1fr;  /* column widths; dragging a heading's edge changes them */
-}
+.wl { position: absolute; inset: 0; overflow: hidden auto; font-family: var(--num); font-size: 12px; font-variant-numeric: tabular-nums; }
 .wr {
   display: grid; grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)) minmax(0, var(--w-vol)); align-items: center; gap: 6px;
   height: 24px; padding: 0 6px; white-space: nowrap; border-bottom: 1px solid var(--grid); cursor: pointer;
 }
 .wr > * { overflow: hidden; text-overflow: ellipsis; }
-.wr .wp, .wr .wc, .wr .wpc, .wr .wv { text-align: right; }
+.wr .num { text-align: right; }
 .wr .wn, .wr .grip, .wr .wx { display: none; }
 .wr .ws { font-weight: 600; }
 .wr .wn { font-family: var(--ui); font-size: 11px; color: var(--muted); }
@@ -345,7 +348,6 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .wedit { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 6px; background: var(--head); border-bottom: 1px solid var(--line); font-family: var(--ui); font-size: 11.5px; color: var(--muted); }
 .wedit .btn { height: 24px; padding: 0 10px; font-size: 12px; }
 .wl.editing .wr { grid-template-columns: 22px minmax(0, .8fr) minmax(0, 1.6fr) 26px; cursor: default; }
-.wl.editing .wr .wp, .wl.editing .wr .wc, .wl.editing .wr .wpc, .wl.editing .wr .wv { display: none; }
 .wl.editing .wr .wn, .wl.editing .wr .grip, .wl.editing .wr .wx { display: block; }
 .wr .grip { color: var(--muted); touch-action: none; cursor: grab; height: 100%; place-items: center; }
 .wl.editing .wr .grip { display: grid; }
@@ -356,9 +358,23 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .wempty .btn { margin-top: 8px; }
 .picks button:disabled { opacity: .35; }
 .sym > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container (min-width: 560px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-name)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)) minmax(0, var(--w-vol)); } .wl:not(.editing) .wr .wn { display: block; } }
-@container (max-width: 330px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)); } .wr .wv { display: none; } }
-@container (max-width: 240px) { .wl:not(.editing) .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-pct)); } .wr .wc { display: none; } }
+/* The usual columns drop the name, volume and change as the panel narrows. Columns you pick yourself always show,
+   and scroll sideways when they don't fit, with the symbol held at the left. */
+@container (min-width: 560px) { .wl.auto .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-name)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)) minmax(0, var(--w-vol)); } .wl.auto .wr .wn { display: block; } }
+@container (max-width: 330px) { .wl.auto .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-chg)) minmax(0, var(--w-pct)); } .wl.auto .wr .wv { display: none; } }
+@container (max-width: 240px) { .wl.auto .wr { grid-template-columns: minmax(0, var(--w-sym)) minmax(0, var(--w-last)) minmax(0, var(--w-pct)); } .wl.auto .wr .wc { display: none; } }
+.wl.custom { overflow: auto; }
+.wl.custom .wr { grid-template-columns: var(--wgrid); min-width: var(--wmin); }
+.wl.custom .wr .wn { display: block; }
+.wl.custom .wr > .ws { position: sticky; left: 6px; z-index: 1; --wbg: var(--panel); background: var(--wbg); box-shadow: -6px 0 0 var(--wbg), 6px 0 0 var(--wbg); }
+.wl.custom .wr.wh > .ws { --wbg: var(--head); z-index: 2; }
+.wl.custom .wr.on > .ws { --wbg: color-mix(in srgb, var(--fg) 12%, var(--panel)); box-shadow: -3px 0 0 var(--wbg), -6px 0 0 var(--wsel, var(--accent)), 6px 0 0 var(--wbg); }
+.wcolmenu { max-height: min(58vh, 460px); overflow: auto; margin: 0 -2px; padding: 0 2px; }
+.wcolmenu h5 { margin: 8px 6px 2px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.wcolmenu .menu { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wcolmenu .menu button { padding: 7px 8px; font-size: 13px; gap: 8px; }
+.wcolmenu .menu button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcolmenu .check { width: 26px; height: 16px; } .wcolmenu .check::after { width: 12px; height: 12px; } .wcolmenu .check.on::after { transform: translateX(10px); }
 
 /* app zoom: scale the interface text and controls; chart canvases stay at native size and scale their own text */
 .bar, .tabs, .th, .tbl, .fund, .wl, .legend, .hint, .edit .mid, .side-add, .zin, .toast { zoom: var(--scale); }
@@ -993,7 +1009,7 @@ async function loadSchwab(s) {
 }
 
 let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
-const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,12,18,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
+const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
 function sSend(sock, service, command, parameters) {
   sock.send(JSON.stringify({ requests: [{ requestid: String(sReq++), service, command, SchwabClientCustomerId: sInfo.schwabClientCustomerId, SchwabClientCorrelId: sInfo.schwabClientCorrelId, parameters }] }));
 }
@@ -1063,7 +1079,7 @@ async function openSchwab() {
 }
 function onSchwabData(d) {
   (d.content || []).forEach(c => {
-    if (d.service === 'LEVELONE_EQUITIES' && quotes.has(c.key)) setQuote(quotes.get(c.key), { bid: c[1], ask: c[2], last: c[3], vol: c[8], close: c[12], chg: c[18], pct: c[42] });
+    if (d.service === 'LEVELONE_EQUITIES' && quotes.has(c.key)) setQuote(quotes.get(c.key), { bid: c[1], ask: c[2], last: c[3], vol: c[8], close: c[12], chg: c[18], pct: c[42], high: c[10], low: c[11], open: c[17], hi52: c[19], lo52: c[20], pe: c[21] });
     const s = stores[c.key];
     if (!s || !s.live || !s.ready) return;
     if (d.service === 'LEVELONE_EQUITIES') {
@@ -1290,13 +1306,17 @@ function newsView(d) {
   return note + items.map(i => `<a class="nitem${Date.now() - i.time < 3600e3 ? ' fresh' : ''}" href="${safeUrl(i.link)}" target="_blank" rel="noopener"><b>${esc(i.title)}</b><small>${esc(i.source || '')}${i.time ? ' · ' + fAgo(i.time) : ''}</small></a>`).join('') +
     '<p class="fnote">Headlines from Yahoo Finance and Google News, newest first. A blue edge marks the last hour.</p>';
 }
+// Schwab's float is usually in millions of shares, but sometimes in shares.
+const schwabFloat = f => {
+  const shares = +f.sharesOutstanding || 0;
+  return f.marketCapFloat ? (shares && f.marketCapFloat * 1e6 > shares * 1.5 ? f.marketCapFloat : f.marketCapFloat * 1e6) : 0;
+};
 function statsView(d, sym) {
   const f = d.f || {}, qf = d.qf || {}, qt = d.quote || {};
   const s = store(sym), px = (ready(s) && last(s)) || qt.lastPrice || qt.closePrice;
   const shares = +f.sharesOutstanding || 0;
-  // Schwab gives market cap and float in millions.
-  const cap = shares && px ? shares * px : f.marketCap ? f.marketCap * 1e6 : 0;
-  const flt = f.marketCapFloat ? (shares && f.marketCapFloat * 1e6 > shares * 1.5 ? f.marketCapFloat : f.marketCapFloat * 1e6) : 0;
+  // Schwab gives market cap in millions.
+  const cap = shares && px ? shares * px : f.marketCap ? f.marketCap * 1e6 : 0, flt = schwabFloat(f);
   const groups = [
     ['Price and volume', [['52-week high', fNum(f.high52 || qt['52WeekHigh'])], ['52-week low', fNum(f.low52 || qt['52WeekLow'])],
       ['Avg volume, 10 days', fBig(f.avg10DaysVolume || f.vol10DayAvg || qf.avg10DaysVolume)], ['Avg volume, 3 months', fBig(f.avg3MonthVolume || f.vol3MonthAvg)],
@@ -1444,13 +1464,16 @@ function setQuote(q, v) {
   const num = x => typeof x === 'number' && isFinite(x);
   if (num(v.last) && v.last > 0 && v.last !== q.last) { if (q.last) q.dir = v.last > q.last ? 'up' : 'down'; q.last = v.last; }
   if (num(v.close) && v.close > 0) q.close = v.close;
-  ['bid', 'ask', 'vol', 'chg', 'pct'].forEach(k => { if (num(v[k])) q[k] = v[k]; });
+  ['bid', 'ask', 'vol', 'chg', 'pct', 'open', 'high', 'low', 'hi52', 'lo52', 'avg', 'pe'].forEach(k => { if (num(v[k])) q[k] = v[k]; });
   q.missing = false;
 }
 function wquote(sym) {
   if (!isLive()) {
-    const s = store(sym), d = s.daily[s.daily.length - 1];
-    return { last: last(s), close: s.prevClose, vol: d && d.volume };
+    const s = store(sym), D = s.daily, d = D[D.length - 1];
+    // The year's range and the 10-day average volume come from the days before today.
+    if (!s.wpast) { const yr = D.slice(-252, -1), ten = D.slice(-11, -1); s.wpast = { hi: Math.max(...yr.map(b => b.high)), lo: Math.min(...yr.map(b => b.low)), avg: ten.reduce((a, b) => a + b.volume, 0) / ten.length }; }
+    return { last: last(s), close: s.prevClose, vol: d && d.volume, bid: s.bid, ask: s.ask, open: d && d.open, high: d && d.high, low: d && d.low,
+      hi52: d && Math.max(s.wpast.hi, d.high), lo52: d && Math.min(s.wpast.lo, d.low), avg: s.wpast.avg };
   }
   let q = quotes.get(sym);
   if (!q) { quotes.set(sym, q = { sym }); queueQuotes(); }
@@ -1464,22 +1487,49 @@ async function refreshQuotes() {
   quotesBusy = true; quotesAt = Date.now();
   try {
     const list = syms.map(encodeURIComponent).join(',');
-    const j = mode === 'schwab' ? await helper(`/quotes?symbols=${list}&fields=quote,reference`) : await api('/v2/stocks/snapshots', { symbols: syms.join(','), feed: 'iex' });
+    const j = mode === 'schwab' ? await helper(`/quotes?symbols=${list}&fields=quote,fundamental,reference`) : await api('/v2/stocks/snapshots', { symbols: syms.join(','), feed: 'iex' });
     if (dataCfg.mode !== mode) return;
     syms.forEach(sym => {
       const q = quotes.get(sym) || { sym }, r = j[sym];
       quotes.set(sym, q);
       if (r && r.quote) {
-        const x = r.quote;
-        setQuote(q, { last: x.lastPrice, bid: x.bidPrice, ask: x.askPrice, close: x.closePrice, vol: x.totalVolume, chg: x.netChange, pct: x.netPercentChange });
+        const x = r.quote, f = r.fundamental || {};
+        setQuote(q, { last: x.lastPrice, bid: x.bidPrice, ask: x.askPrice, close: x.closePrice, vol: x.totalVolume, chg: x.netChange, pct: x.netPercentChange,
+          open: x.openPrice, high: x.highPrice, low: x.lowPrice, hi52: x['52WeekHigh'], lo52: x['52WeekLow'], avg: f.avg10DaysVolume, pe: f.peRatio });
         if (r.reference && r.reference.description) q.name = r.reference.description;
       } else if (r && (r.latestTrade || r.dailyBar)) {
-        setQuote(q, { last: r.latestTrade && r.latestTrade.p, bid: r.latestQuote && r.latestQuote.bp, ask: r.latestQuote && r.latestQuote.ap, close: r.prevDailyBar && r.prevDailyBar.c, vol: r.dailyBar && r.dailyBar.v });
+        const b = r.dailyBar || {};
+        setQuote(q, { last: r.latestTrade && r.latestTrade.p, bid: r.latestQuote && r.latestQuote.bp, ask: r.latestQuote && r.latestQuote.ap, close: r.prevDailyBar && r.prevDailyBar.c, vol: b.v, open: b.o, high: b.h, low: b.l });
       } else if (!q.last) q.missing = true;
     });
   } catch (e) {
     // The data button already shows connection problems; the next round tries again.
   } finally { quotesBusy = false; }
+}
+// Market cap and float come from Schwab's company data, fetched once per ticker and only when one of those columns is showing.
+let instWant = new Set(), instTimer = 0;
+function wantInst(sym) {
+  const q = quotes.get(sym);
+  if (!q || dataCfg.mode !== 'schwab' || Date.now() - (q.instAt || 0) < 10 * 60e3) return;
+  q.instAt = Date.now();
+  instWant.add(sym);
+  clearTimeout(instTimer); instTimer = setTimeout(refreshInst, 300);
+}
+async function refreshInst() {
+  const syms = [...instWant];
+  instWant.clear();
+  for (let i = 0; i < syms.length; i += 50) {
+    const part = syms.slice(i, i + 50);
+    try {
+      const j = await helper(`/instruments?symbol=${part.map(encodeURIComponent).join(',')}&projection=fundamental`);
+      (j.instruments || []).forEach(x => {
+        const q = quotes.get(x.symbol), f = x.fundamental;
+        if (!q || !f) return;
+        q.shares = +f.sharesOutstanding || 0; q.cap = f.marketCap ? f.marketCap * 1e6 : 0; q.float = schwabFloat(f);
+        q.instAt = Infinity;
+      });
+    } catch (e) { /* tried again in ten minutes */ }
+  }
 }
 
 // The panel's popovers: pick or manage lists, and add tickers.
@@ -1534,7 +1584,49 @@ function wlAddPop(anchor, t) {
     if (matchMedia('(pointer: fine)').matches) p.querySelector('input').focus();
   });
 }
-const WCOLS = [['sym', 'Symbol', 'ws'], ['name', 'Name', 'wn'], ['last', 'Last', 'wp'], ['chg', 'Chg', 'wc'], ['pct', '%Chg', 'wpc'], ['vol', 'Volume', 'wv']];
+// Watchlist columns: heading, cell class, name in the Columns menu, default width (a share of the row) and the
+// narrowest it reads well at (columns you pick scroll sideways rather than squeeze below that).
+const sgn = (v, d) => v == null ? '' : (v > 0 ? '+' : '') + v.toFixed(d);
+const fx = (v, d) => v == null ? '' : v.toFixed(d);
+const WCOL = {
+  sym: { h: 'Symbol', c: 'ws', w: 1.15, min: 48 },
+  name: { h: 'Name', c: 'wn', w: 1.7, min: 96, f: v => v },
+  last: { h: 'Last', c: 'wp', f: (v, d) => v == null ? '—' : v.toFixed(d) },
+  chg: { h: 'Chg', c: 'wc', menu: 'Change', sign: true, f: sgn },
+  pct: { h: '%Chg', c: 'wpc', menu: '% change', sign: true, min: 56, f: v => v == null ? '' : sgn(v, 2) + '%' },
+  bid: { h: 'Bid', c: 'wbd', f: fx },
+  ask: { h: 'Ask', c: 'wak', f: fx },
+  spread: { h: 'Spread', c: 'wsp', f: fx },
+  open: { h: 'Open', c: 'wop', f: fx },
+  high: { h: 'High', c: 'whi', f: fx },
+  low: { h: 'Low', c: 'wlo', f: fx },
+  prev: { h: 'Prev', c: 'wpv', menu: 'Previous close', f: fx },
+  gap: { h: 'Gap%', c: 'wgp', menu: 'Gap %', sign: true, min: 56, f: v => v == null ? '' : sgn(v, 2) + '%' },
+  vol: { h: 'Volume', c: 'wv', f: v => fBig(v) || '' },
+  avg: { h: 'Avg Vol', c: 'wav', menu: 'Avg volume, 10 days', f: v => fBig(v) || '' },
+  rvol: { h: 'RVol', c: 'wrv', menu: 'Relative volume', f: v => v == null ? '' : v.toFixed(2) + 'x' },
+  hi52: { h: '52W Hi', c: 'wyh', menu: '52-week high', f: fx },
+  lo52: { h: '52W Lo', c: 'wyl', menu: '52-week low', f: fx },
+  cap: { h: 'Mkt Cap', c: 'wmc', menu: 'Market cap', inst: true, f: v => fBig(v) || '' },
+  float: { h: 'Float', c: 'wfl', inst: true, f: v => fBig(v) || '' },
+  pe: { h: 'P/E', c: 'wpe', menu: 'P/E ratio', f: v => v == null ? '' : v.toFixed(1) }
+};
+const WAUTO = ['sym', 'name', 'last', 'chg', 'pct', 'vol'];
+const WGROUPS = [['Price', ['last', 'chg', 'pct', 'bid', 'ask', 'spread']], ['Today', ['open', 'high', 'low', 'prev', 'gap']], ['Volume', ['vol', 'avg', 'rvol']],
+  ['52 weeks', ['hi52', 'lo52']], ['Company', ['name', 'cap', 'float', 'pe']]];
+// The columns this panel shows when you have picked them; otherwise null (the usual columns, which fit themselves to the panel).
+const wcolsOf = cell => Array.isArray(cell.wshow) ? ['sym', ...cell.wshow.filter(k => WCOL[k] && k !== 'sym')] : null;
+// Everything a watchlist row can show for one ticker, as numbers (null when the data source doesn't have it).
+function wvals(sym) {
+  const q = wquote(sym), p = q.last > 0 ? q.last : null, c = q.close > 0 ? q.close : null, ok = x => x > 0 ? x : null;
+  const chg = p && c ? p - c : p && q.chg != null ? q.chg : null, pct = p && c ? chg / c * 100 : p && q.pct != null ? q.pct : null;
+  const bid = ok(q.bid), ask = ok(q.ask), open = ok(q.open), vol = ok(q.vol), avg = ok(q.avg);
+  return {
+    name: q.name || NAMES[sym] || '', missing: !!q.missing, last: p, chg, pct, bid, ask, spread: bid && ask >= bid ? ask - bid : null,
+    open, high: ok(q.high), low: ok(q.low), prev: c, gap: open && c ? (open - c) / c * 100 : null, vol, avg, rvol: vol && avg ? vol / avg : null,
+    hi52: ok(q.hi52), lo52: ok(q.lo52), cap: q.shares && p ? q.shares * p : ok(q.cap), float: ok(q.float), pe: ok(q.pe)
+  };
+}
 function flash(el, up) {
   if (!el.animate) return;
   el.animate([{ background: css(up ? '--up' : '--down') + '50' }, { background: 'transparent' }], { duration: 500, easing: 'ease-out' });
@@ -1684,6 +1776,21 @@ class Tile {
       };
       body.addEventListener('pointerup', endHl, true);
       body.addEventListener('pointercancel', endHl, true);
+      // With highlight to zoom, the scroll wheel moves the chart through time instead of zooming:
+      // down (or a swipe left on a trackpad) goes later, up goes earlier. Ctrl/pinch still zooms.
+      body.addEventListener('wheel', e => {
+        if (zoomMode !== 'highlight' || e.ctrlKey) return;
+        const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        const ts = (this.vchart || this.chart).timeScale(), r = ts.getVisibleLogicalRange(), n = (this.list || []).length;
+        e.preventDefault(); e.stopPropagation();
+        if (!d || !r || !n) return;
+        // A wheel step moves the chart as far as dragging it by the same number of pixels would.
+        const span = r.to - r.from, px = d * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.plotWidth() : 1);
+        const from = Math.max(-span / 2, Math.min(n - 1 - span / 2, r.from + px / this.plotWidth() * span));
+        if (Math.abs(from - r.from) < 1e-6) return;
+        ts.setVisibleLogicalRange({ from, to: from + span });
+        this.showReset();
+      }, { capture: true, passive: false });
       // Touching or scrolling the chart hands the view over to you.
       body.addEventListener('pointerdown', () => { this.autoFit = false; }, true);
       body.addEventListener('wheel', () => { this.autoFit = false; }, { capture: true, passive: true });
@@ -1728,49 +1835,65 @@ class Tile {
     this.load();
   }
   get intraday() { return typeof TF[this.cell.tf] === 'number'; }
+  paintSize() {
+    if (this.cell.tsize > 0 && TEXT_KINDS.includes(this.kind)) this.el.style.setProperty('--tsize', this.cell.tsize); else this.el.style.removeProperty('--tsize');
+  }
   // Watchlist rows are built when the list changes; updateWatch() then fills in prices in place,
   // so a tap never lands on a row that was just replaced.
   paintWatch() {
     const l = listFor(this.cell), ed = !!this.wediting, wl = this.$('.wl'), sort = ed ? '' : this.cell.wsort || '';
-    const key = [l.id, l.syms.join(), ed, sort].join('|');
+    const mine = !ed && wcolsOf(this.cell), cols = ed ? ['sym', 'name'] : mine || WAUTO;
+    const key = [l.id, l.syms.join(), ed, sort, cols.join(), !!mine].join('|');
     if (key !== this.wKey) {
-      const [sk, sd] = sort.split(':'), top = wl.scrollTop;
+      const [sk, sd] = sort.split(':'), top = wl.scrollTop, left = wl.scrollLeft, cls = k => WCOL[k].c + (WCOL[k].f && k !== 'name' ? ' num' : '');
       const head = ed ? '<div class="wedit"><span>Drag the dots to reorder. ✕ removes.</span><button class="btn" data-a="done">Done</button></div>'
-        : `<div class="wr wh">${WCOLS.map(([k, label, c]) => `<span class="${c}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}><span class="wt">${label}</span><i class="wgrab" aria-hidden="true"></i></span>`).join('')}</div>`;
-      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${WCOLS.map(([, , c]) => `<span class="${c}">${c === 'ws' ? esc(s) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
+        : `<div class="wr wh">${cols.map(k => `<span class="${cls(k)}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}><span class="wt">${WCOL[k].h}</span><i class="wgrab" aria-hidden="true"></i></span>`).join('')}</div>`;
+      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${cols.map(k => `<span class="${cls(k)}">${k === 'sym' ? esc(s) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
       wl.classList.toggle('editing', ed);
+      wl.classList.toggle('auto', !ed && !mine);
+      wl.classList.toggle('custom', !!mine);
       wl.innerHTML = head + (l.syms.length ? `<div class="wrows">${rows}</div>` : `<p class="wempty">${esc(l.name)} is empty. Add the tickers you want to keep an eye on, then tap one to open it on the linked charts.<br><button class="btn primary" data-a="add">Add tickers</button></p>`);
-      wl.scrollTop = top;
-      this.wrows = new Map([...wl.querySelectorAll('.wr[data-s]')].map(el => [el.dataset.s, { el, cells: Object.fromEntries(WCOLS.map(([, , c]) => [c, el.querySelector('.' + c)])), shown: {} }]));
+      wl.scrollTop = top; wl.scrollLeft = left;
+      this.wrows = new Map([...wl.querySelectorAll('.wr[data-s]')].map(el => [el.dataset.s, { el, cells: Object.fromEntries(cols.map(k => [k, el.querySelector('.' + WCOL[k].c)])), shown: {}, cls: {} }]));
+      this.wShown = cols;
       this.wOrder = '';
       this.wKey = key;
     }
-    const g = this.cell.link;
+    const g = this.cell.link, wc = this.cell.wcols || {};
     wl.style.setProperty('--wsel', g ? LINK_COLORS[g] : css('--accent'));
-    WCOLS.forEach(([k]) => { const w = (this.cell.wcols || {})[k]; if (w > 0) wl.style.setProperty('--w-' + k, w.toFixed(3) + 'fr'); else wl.style.removeProperty('--w-' + k); });
+    cols.forEach(k => wl.style.setProperty('--w-' + k, (wc[k] > 0 ? wc[k] : WCOL[k].w || 1).toFixed(3) + 'fr'));
+    if (mine) {
+      wl.style.setProperty('--wgrid', cols.map(k => `minmax(0, var(--w-${k}))`).join(' '));
+      wl.style.setProperty('--wmin', cols.reduce((a, k) => a + (WCOL[k].min || 50), 12 + 6 * (cols.length - 1)) + 'px');
+    }
     this.updateWatch();
+  }
+  // The columns showing right now (the usual ones drop out as the panel narrows).
+  visibleCols() {
+    const h = this.$('.wh');
+    return h ? [...h.children].filter(c => getComputedStyle(c).display !== 'none').map(c => c.dataset.k) : wcolsOf(this.cell) || WAUTO;
   }
   updateWatch() {
     if (!this.wrows) return;
-    const vals = [];
+    const vals = [], cols = this.wShown, inst = dataCfg.mode === 'schwab' && isLive() && cols.some(k => WCOL[k].inst);
     for (const [sym, r] of this.wrows) {
-      const q = wquote(sym), p = q.last, d = p ? dec(p) : 2;
-      const chg = p && q.close ? p - q.close : p ? q.chg : null, pct = p && q.close ? chg / q.close * 100 : p ? q.pct : null;
-      const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : '';
-      const txt = {
-        wn: q.name || NAMES[sym] || '',
-        wp: q.missing ? 'not found' : p ? p.toFixed(d) : '—',
-        wc: chg == null ? '' : (chg > 0 ? '+' : '') + chg.toFixed(d),
-        wpc: pct == null ? '' : (pct > 0 ? '+' : '') + pct.toFixed(2) + '%',
-        wv: fBig(q.vol) || ''
-      };
-      for (const k in txt) if (r.shown[k] !== txt[k]) { r.cells[k].textContent = txt[k]; r.shown[k] = txt[k]; }
-      if (r.cls !== cls) { r.cells.wc.className = 'wc ' + cls; r.cells.wpc.className = 'wpc ' + cls; r.cls = cls; }
-      if (p && r.p && p !== r.p) flash(r.cells.wp, p > r.p);
-      r.p = p;
+      const v = wvals(sym), d = dec(v.last || v.prev || v.bid || 10);
+      if (inst) wantInst(sym);
+      for (const k of cols) {
+        const C = WCOL[k], cell = r.cells[k];
+        if (!C.f) continue;
+        const txt = k === 'last' && v.missing ? 'not found' : C.f(v[k], d);
+        if (r.shown[k] !== txt) { cell.textContent = txt; r.shown[k] = txt; }
+        if (C.sign) {
+          const cls = v[k] > 0 ? 'up' : v[k] < 0 ? 'down' : '';
+          if (r.cls[k] !== cls) { cell.classList.remove('up', 'down'); if (cls) cell.classList.add(cls); r.cls[k] = cls; }
+        }
+      }
+      if (v.last && r.p && v.last !== r.p && r.cells.last) flash(r.cells.last, v.last > r.p);
+      r.p = v.last;
       r.el.classList.toggle('on', sym === this.cell.sym);
-      r.el.classList.toggle('bad', !!q.missing);
-      vals.push({ sym, name: txt.wn || sym, last: p || null, chg, pct, vol: q.vol || null });
+      r.el.classList.toggle('bad', v.missing);
+      vals.push({ ...v, sym, name: v.name || sym });
     }
     // Sorted lists keep re-sorting as prices move (not while you're dragging a row).
     const [k, dir] = (this.wediting ? '' : this.cell.wsort || '').split(':');
@@ -1901,6 +2024,7 @@ class Tile {
   }
   load(keepView) {
     const { sym } = this.cell, watch = this.kind === 'watch';
+    this.paintSize();
     this.$('.sym').innerHTML = `<span>${watch ? esc(listFor(this.cell).name) : sym}</span>${ICON.caret}`;
     this.paintLink();
     if (watch) return this.paintWatch();
@@ -2348,12 +2472,15 @@ function closePop() { pop.hidden = true; popAnchor = null; }
 document.addEventListener('pointerdown', e => { if (!pop.hidden && !pop.contains(e.target) && !popAnchor.contains(e.target)) closePop(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
 
+// Level II and Time & Sales panels each keep their own text size.
+const TEXT_KINDS = ['l2', 'ts', 'lts'], TEXT_SIZES = [0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
 function tileMenu(anchor, t) {
   const isChart = t.kind === 'chart', can = t.intraday, isMax = maxed === t.cell.id, only = allCells().length < 2;
   openPop(anchor, `
     <div class="menu">
+      ${TEXT_KINDS.includes(t.kind) ? `<div class="tsz"><span>Text size</span><button data-z="-1" aria-label="Smaller text">A−</button><b>${Math.round((t.cell.tsize || 1) * 100)}%</b><button data-z="1" aria-label="Larger text">A+</button></div><hr>` : ''}
       ${isChart ? `<button data-a="vwap" ${can ? '' : 'disabled'}><span>VWAP${can ? '' : ' <small>intraday only</small>'}</span><span class="check ${t.cell.vwap && can ? 'on' : ''}"></span></button>` : ''}
-      ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
+      ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button><button data-a="wpick"><span>Columns <small>add and remove</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
         : `<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
       <hr>
@@ -2363,10 +2490,21 @@ function tileMenu(anchor, t) {
     </div>`, p => {
     const v = p.querySelector('[data-a=vwap]');
     if (v) v.onclick = () => { t.cell.vwap = !t.cell.vwap; t.load(); save(); closePop(); };
+    // Text size steps stay open, so you can tap until it looks right.
+    const zs = [...p.querySelectorAll('[data-z]')];
+    const paintSize = () => { const z = t.cell.tsize || 1; p.querySelector('.tsz b').textContent = Math.round(z * 100) + '%'; zs[0].disabled = z <= TEXT_SIZES[0]; zs[1].disabled = z >= TEXT_SIZES[TEXT_SIZES.length - 1]; };
+    zs.forEach(b => b.onclick = () => {
+      const z = t.cell.tsize || 1, next = +b.dataset.z > 0 ? TEXT_SIZES.find(x => x > z + 1e-9) : [...TEXT_SIZES].reverse().find(x => x < z - 1e-9);
+      if (!next) return;
+      if (next === 1) delete t.cell.tsize; else t.cell.tsize = next;
+      t.paintSize(); save(); paintSize();
+    });
+    if (zs.length) paintSize();
     const we = p.querySelector('[data-a=wedit]'), wa = p.querySelector('[data-a=wladd]');
     if (we) we.onclick = () => { closePop(); t.wediting = true; t.load(); };
-    const wc = p.querySelector('[data-a=wcols]');
+    const wc = p.querySelector('[data-a=wcols]'), wp = p.querySelector('[data-a=wpick]');
     if (wc) wc.onclick = () => { closePop(); delete t.cell.wcols; save(); t.load(); };
+    if (wp) wp.onclick = () => { closePop(); colsPop(anchor, t); };
     if (wa) wa.onclick = () => {
       closePop();
       const l = activeList(), sym = t.cell.sym, seen = [...tiles.values()].some(x => x.kind === 'watch');
@@ -2375,6 +2513,32 @@ function tileMenu(anchor, t) {
     p.querySelector('[data-a=max]').onclick = () => { closePop(); toggleMax(t); };
     p.querySelector('[data-a=del]').onclick = () => { closePop(); removePanel(t.cell.id); };
     p.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { closePop(); t.cell.kind = b.dataset.k; render(); });
+  });
+}
+
+// Turn watchlist columns on and off. The first change keeps whatever is showing now and adds or removes one column;
+// "Usual columns" goes back to the set that fits itself to the panel.
+function colsPop(anchor, t) {
+  const on = new Set(t.visibleCols()), mine = !!wcolsOf(t.cell);
+  const btn = k => `<button data-c="${k}"><span>${WCOL[k].menu || WCOL[k].h}</span><span class="check ${on.has(k) ? 'on' : ''}"></span></button>`;
+  openPop(anchor, `
+    <h4>Columns</h4>
+    <div class="wcolmenu">${WGROUPS.map(([h, ks]) => `<h5>${h}</h5><div class="menu">${ks.map(btn).join('')}</div>`).join('')}</div>
+    <p class="note">The symbol always shows. When the columns don't fit, slide the list sideways.</p>
+    <hr>
+    <div class="menu"><button data-a="auto" ${mine ? '' : 'disabled'}><span>Usual columns <small>fit to the panel</small></span></button></div>`, p => {
+    p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
+      const k = b.dataset.c;
+      if (on.has(k)) on.delete(k); else on.add(k);
+      // Columns keep a fixed order, so a new one lands next to its relatives.
+      t.cell.wshow = Object.keys(WCOL).filter(x => on.has(x));
+      const sk = (t.cell.wsort || '').split(':')[0];
+      if (sk && sk !== 'sym' && !on.has(sk)) delete t.cell.wsort;
+      b.querySelector('.check').classList.toggle('on', on.has(k));
+      p.querySelector('[data-a=auto]').disabled = false;
+      save(); t.load();
+    });
+    p.querySelector('[data-a=auto]').onclick = () => { closePop(); delete t.cell.wshow; save(); t.load(); };
   });
 }
 
@@ -2465,7 +2629,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-zoom="pinch" aria-current="${zoomMode === 'pinch'}"><span>Pinch to zoom <small>drag to scroll</small></span><span class="check ${zoomMode === 'pinch' ? 'on' : ''}"></span></button>
       <button data-zoom="highlight" aria-current="${zoomMode === 'highlight'}"><span>Highlight to zoom <small>drag across a chart</small></span><span class="check ${zoomMode === 'highlight' ? 'on' : ''}"></span></button>
     </div>
-    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
+    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it, and use the scroll wheel to move through time. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
