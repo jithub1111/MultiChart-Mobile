@@ -2628,7 +2628,7 @@ function tileMenu(anchor, t) {
       ${t.kind === 'watch' ? `<button data-a="wedit"><span>Edit list <small>remove and reorder</small></span></button><button data-a="wpick"><span>Columns <small>add and remove</small></span></button>${t.cell.wcols ? '<button data-a="wcols"><span>Reset column widths</span></button>' : ''}`
         : `${t.kind === 'l2' || t.kind === 'lts' ? '<button data-a="l2cols"><span>Level II options <small>style and columns</small></span></button>' : ''}<button data-a="wladd"><span>Add ${t.cell.sym} to watchlist${wlists.length ? ` <small>${esc(activeList().name)}</small>` : ''}</span></button>`}
       <button data-a="max"><span>${isMax ? 'Back to grid' : 'Expand to full screen'}</span></button>
-      ${vidPip && pipOk ? `<button data-a="pip"><span>${vp.on && vp.id === t.cell.id ? 'Stop floating this panel' : 'Float this panel <small>picture-in-picture</small>'}</span></button>` : ''}
+      ${vidPip && pipOk ? `<button data-a="pip"><span>${vp.on && vp.id === t.cell.id ? 'Stop floating this panel' : `Float this panel <small>${pipHome() ? 'open in Safari to use it' : 'picture-in-picture'}</small>`}</span></button>` : ''}
       <hr>
       ${Object.entries(KINDS).map(([k, label]) => `<button data-k="${k}" aria-current="${t.kind === k}"><span>Show as ${label}</span></button>`).join('')}
       <hr>
@@ -2822,7 +2822,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
-      ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
+      ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : `Picture-in-picture <small>${pipHome() ? 'open in Safari to use it' : 'float over other apps'}</small>`}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
     p.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
@@ -3531,9 +3531,19 @@ function pipFeed() {
   if (!v.requestPictureInPicture && !(v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture'))) pipOk = false;
   return v;
 }
+// iPhone and iPad don't allow picture-in-picture inside Home Screen apps (WebKit bug 303885, open as of
+// iOS 26), though Safari itself does. The video says so once it has loaded.
+const pipHome = () => navigator.standalone === true && !!vp.video && vp.video.readyState > 0
+  && !!vp.video.webkitSupportsPresentationMode && !vp.video.webkitSupportsPresentationMode('picture-in-picture');
+function pipRefused() {
+  toast(navigator.standalone
+    ? 'iPhone doesn\'t allow picture-in-picture inside Home Screen apps yet. That\'s an Apple limitation. Open Multichart in Safari to use it.'
+    : 'This browser won\'t float the app\'s live picture. Updating to the latest iOS may help.', true);
+}
 // id: one panel, or null for the whole tab. Tapping the same choice again closes the floating picture.
 function floatVideo(id) {
   const v = pipFeed();
+  if (pipHome() && !vp.on) return pipRefused();
   if (vp.on && vp.id === id) {
     if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
     else if (v.webkitSetPresentationMode) v.webkitSetPresentationMode('inline');
@@ -3552,7 +3562,11 @@ function floatVideo(id) {
       vp.worker = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 700)'], { type: 'text/javascript' })));
       vp.worker.onmessage = () => { if (vp.on && Date.now() - lastBeat > 1500) beat(); };
     } catch (e) {}
-  }).catch(e => { vp.id = null; toast(`Picture-in-picture did not open${e && e.message ? ': ' + esc(e.message) : '.'}`); });
+  }).catch(e => {
+    vp.id = null;
+    if (e && e.name === 'NotSupportedError') return pipRefused();
+    toast(`Picture-in-picture did not open${e && e.message ? ': ' + esc(e.message) : '.'}`);
+  });
 }
 function paintPip() {
   const t = vp.id && tiles.get(vp.id), root = t && t.el.isConnected ? t.el : grid, R = root.getBoundingClientRect();
