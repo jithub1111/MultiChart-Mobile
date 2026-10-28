@@ -220,8 +220,20 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .lv0 { background: var(--l2-1); } .lv1 { background: var(--l2-2); } .lv2 { background: var(--l2-3); }
 .lv3 { background: var(--l2-4); } .lv4 { background: var(--l2-5); } .lv5 { background: var(--l2-6); }
 .book .lv0 { font-weight: 600; }
-/* Basic Level II: plain rows in the text color, like thinkorswim */
-.l2basic .book .r:not(.hd) { background: none; color: var(--fg); font-weight: 400; border-bottom-color: var(--grid); }
+/* Basic Level II: thinkorswim's look, with steel-blue rows, grid lines, a black header, green sizes and
+   prices colored by each market maker's last move */
+.l2basic .book { background: #0a0a0a; }
+.l2basic .side { column-gap: 0; }
+.l2basic .book .r { padding: 0; font-family: var(--ui); border-bottom: 1px solid #252525; }
+.l2basic .book .r > span { padding: 3px 6px; border-right: 1px solid #457094; }
+.l2basic .book .r > span:last-child { border-right: 0; }
+.l2basic .book .r:not(.hd) { background: #265883; color: #dadada; font-weight: 400; }
+.l2basic .book .r.hd { background: #000; color: #e5e5e5; font-weight: 400; }
+.l2basic .book .r.hd > span { border-right-color: #252525; }
+.l2basic .book .r:not(.hd) .l2price { color: #ececec; }
+.l2basic .book .r:not(.hd) .l2price.up { color: #00c531; } .l2basic .book .r:not(.hd) .l2price.down { color: #ff5f5f; }
+.l2basic .book .r:not(.hd) .l2size, .l2basic .book .r:not(.hd) .l2cum { color: #00c531; }
+.l2basic .side:first-child .r.hd .l2price::before { content: "\25BE  "; } .l2basic .side + .side .r.hd .l2price::before { content: "\25B4  "; }
 .l2style { display: flex; margin: 0 4px 6px; }
 .l2style button { flex: 1; }
 .tape .r { grid-template-columns: 9ch minmax(0, 1fr) 7ch; border-bottom: 1px solid var(--grid); }
@@ -230,6 +242,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 @container (max-width: 380px) {
   .side { column-gap: 4px; }
   .book .r { padding: 2px 4px; font-size: .875em; }
+  .l2basic .book .r > span { padding: 3px 4px; }
   .tape .r { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 2px 4px; font-size: .92em; }  /* when squeezed, the time gives way before the price */
 }
 
@@ -616,6 +629,15 @@ const dec = p => p < 1 ? 4 : p < 5 ? 3 : 2;
 const roundTo = (v, inc) => Math.round(v / inc) * inc;
 const last = s => s.m1.length ? s.m1[s.m1.length - 1].close : s.daily.length ? s.daily[s.daily.length - 1].close : NaN;
 
+// Like thinkorswim, each quote remembers which way its market maker last moved it (up or down), matched by
+// MMID and by its place among that MMID's quotes on the side.
+function markTicks(prev, next) {
+  const seen = {}, key = o => o.ex + '#' + (seen[o.ex] = (seen[o.ex] || 0) + 1), old = new Map();
+  (prev || []).forEach(o => old.set(key(o), o));
+  Object.keys(seen).forEach(k => delete seen[k]);
+  next.forEach(o => { const p = old.get(key(o)); o.dir = !p ? '' : o.price > p.price ? 'up' : o.price < p.price ? 'down' : p.dir; });
+  return next;
+}
 function requote(s) {
   const p = last(s), inc = s.inc;
   if (s.live && s.qb > 0 && s.qa >= s.qb) { s.bid = s.qb; s.ask = s.qa; }
@@ -635,7 +657,7 @@ function requote(s) {
     }
     return out.sort((a, b) => a.lv - b.lv || b.size - a.size);
   };
-  s.book = { bids: side(s.bid, -1), asks: side(s.ask, 1) };
+  s.book = { bids: markTicks(s.book && s.book.bids, side(s.bid, -1)), asks: markTicks(s.book && s.book.asks, side(s.ask, 1)) };
 }
 const etTime = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 function addPrints(s, at = Date.now()) {
@@ -1129,7 +1151,8 @@ function onSchwabData(d) {
         });
         return out;
       };
-      s.book = { bids: c[2] ? side(c[2]) : (s.realBook ? s.book.bids : []), asks: c[3] ? side(c[3]) : (s.realBook ? s.book.asks : []) };
+      const was = s.realBook ? s.book : { bids: [], asks: [] };
+      s.book = { bids: c[2] ? markTicks(was.bids, side(c[2])) : was.bids, asks: c[3] ? markTicks(was.asks, side(c[3])) : was.asks };
       s.realBook = true;
     }
   });
@@ -1672,13 +1695,16 @@ function byPrice(list) {
   return out;
 }
 function bookHtml(s, d, cell = {}) {
-  const on = l2colsOf(cell), cols = ['mm', 'price', 'size', 'cum'].filter(k => k === 'price' || on.includes(k));
+  const on = l2colsOf(cell), cols = ['mm', 'price', 'size', 'cum'].filter(k => k === 'price' || on.includes(k)), basic = cell.l2style === 'basic';
   const grid = cols.map(k => k === 'mm' ? 'minmax(0, 1fr)' : k === 'price' && !on.includes('mm') ? 'minmax(max-content, 1fr)' : 'max-content').join(' ');
   const rows = (list, label) => {
     let cum = 0;
+    // Basic uses thinkorswim's headings: Ex, Bid or Ask, and BS or AS for the sizes.
+    const head = k => k === 'price' ? label : basic && k === 'mm' ? 'Ex' : basic && k === 'size' ? label[0] + 'S' : L2COLS[k];
     const cellOf = (o, k) => k === 'mm' ? esc(o.ex) + (o.n > 1 ? ` <small>+${o.n - 1}</small>` : '') : k === 'price' ? o.price.toFixed(d) : k === 'size' ? o.size.toLocaleString() : fCum(cum);
-    return `<div class="side" style="grid-template-columns:${grid}"><div class="r hd">${cols.map(k => `<span>${k === 'price' ? label : L2COLS[k]}</span>`).join('')}</div>` +
-      (cell.l2group ? byPrice(list) : list).map(o => { cum += o.size; return `<div class="r lv${Math.min(o.lv, 5)}">${cols.map(k => `<span>${cellOf(o, k)}</span>`).join('')}</div>`; }).join('') + '</div>';
+    const cls = (o, k) => 'l2' + k + (k === 'price' && o && o.dir ? ' ' + o.dir : '');
+    return `<div class="side" style="grid-template-columns:${grid}"><div class="r hd">${cols.map(k => `<span class="${cls(null, k)}">${head(k)}</span>`).join('')}</div>` +
+      (cell.l2group ? byPrice(list) : list).map(o => { cum += o.size; return `<div class="r lv${Math.min(o.lv, 5)}">${cols.map(k => `<span class="${cls(o, k)}">${cellOf(o, k)}</span>`).join('')}</div>`; }).join('') + '</div>';
   };
   return (s.live && !s.realBook ? `<div class="simnote">${dataCfg.mode === 'schwab' ? 'Waiting for Schwab\'s book · depth simulated' : 'Depth simulated · top is IEX bid/ask'}</div>` : '') + `<div class="book">${rows(s.book.bids, 'Bid')}${rows(s.book.asks, 'Ask')}</div>`;
 }
