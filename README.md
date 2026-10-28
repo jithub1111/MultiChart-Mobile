@@ -65,6 +65,12 @@ needs the app hosted somewhere else (for example GitHub Pages).
 Open `index.html` in any browser. There is no build step. Charts use
 [Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from jsDelivr.
 
+**Full screen on iPhone:** open the site in Safari, tap Share, then **Add to Home Screen**. Opened from
+the Home Screen icon, the app runs without Safari's bars. iPhone keeps a Home Screen app's settings
+separate from Safari's. To bring everything over, tap the data badge in Safari, go to **Move your setup**, and
+tap **Copy all my settings**. Then open the Home Screen app and paste them into the box at the top of the panel
+that opens. The same works for moving to another computer or phone.
+
 ## Roadmap
 
 1. Live data from Alpaca's free plan as a stand-in (done)

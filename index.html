@@ -1,4 +1,12 @@
 <title>Multichart</title>
+<!-- Added to the Home Screen, the app opens full screen without Safari's bars. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Multichart">
+<meta name="theme-color" content="#050608">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,6 +27,7 @@
   --up: #23c26b;
   --down: #f2545b;
   --vwap: #e45cf0;
+  --ext: #9aa4b0;
   --pop: #171b21;
   --chart-bg: #0b0d10;
   --l2-1: #f5d90a; --l2-2: #35c46a; --l2-3: #3aa0ff; --l2-4: #ff7eb6; --l2-5: #b98cff; --l2-6: #8f9aa6;
@@ -323,6 +332,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .crow input { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; flex: none; }
 .crow input::-webkit-color-swatch-wrapper { padding: 2px; }
 .crow input::-webkit-color-swatch { border: 0; border-radius: 4px; }
+.crow input[type=range] { width: 130px; height: 28px; border: 0; border-radius: 0; accent-color: var(--accent); }
+.crow b { font-family: var(--num); font-weight: 500; color: var(--muted); }
 .sheet .reset { margin-top: 18px; width: 100%; justify-content: center; }
 .sheet p, .sheet li { font-size: 13px; line-height: 1.5; color: var(--muted); }
 .sheet p { margin: 6px 0; } .sheet ol, .sheet ul { margin: 6px 0; padding-left: 20px; }
@@ -335,6 +346,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .status i { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: #e0a526; }
 .status[data-state="connecting"] i { background: #2fa7e0; } .status[data-state="live"] i { background: #2fae5d; } .status[data-state="error"] i { background: #e8644f; }
 .sheet details { margin-top: 14px; font-size: 13px; color: var(--muted); } .sheet summary { cursor: pointer; }
+.movebox { margin-top: 8px; } .srcbox ~ .movebox { margin-top: 18px; padding-top: 4px; border-top: 1px solid var(--line); }
 .sheet .row2 { display: flex; gap: 8px; margin-top: 10px; } .sheet .row2 .btn { flex: 1; justify-content: center; }
 @media (max-width: 400px) { .brand { display: none; } .bar { gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { .feed i { animation: none; } }
@@ -379,6 +391,8 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 const TF = { '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '1h': 60, 'D': 'D', 'W': 'W' };
 const OPEN = 9 * 3600 + 30 * 60;           // 9:30 ET, stored as wall-clock seconds
 const SESSION = 390;                        // minutes per regular session
+const CLOSE = 16 * 3600;                    // 4:00 PM ET
+const isExt = t => { const sec = t % 86400; return sec < OPEN || sec >= CLOSE; };  // pre-market or after-hours bar
 const INTRADAY_DAYS = 10, DAILY_DAYS = 260, LIVE_START = 200;
 const BASE = { SPY: 580, QQQ: 505, IWM: 225, DIA: 425, AAPL: 232, MSFT: 425, NVDA: 138, TSLA: 252, AMZN: 188, META: 575, GOOGL: 165, AMD: 155, GLD: 368, UWMC: 1.42, IAUX: 1.46, HGRAF: 2.45 };
 const NAMES = { SPY: 'SPDR S&P 500 ETF', QQQ: 'Invesco QQQ Trust', IWM: 'iShares Russell 2000', DIA: 'SPDR Dow Jones ETF', AAPL: 'Apple Inc', MSFT: 'Microsoft Corp', NVDA: 'NVIDIA Corp', TSLA: 'Tesla Inc', AMZN: 'Amazon.com Inc', META: 'Meta Platforms', GOOGL: 'Alphabet Inc', AMD: 'Advanced Micro Devices', GLD: 'SPDR Gold Shares', UWMC: 'UWM Holdings', IAUX: 'i-80 Gold Corp', HGRAF: 'HighGold Mining' };
@@ -565,7 +579,7 @@ try { dataCfg = { ...dataCfg, ...JSON.parse(localStorage.getItem(DATA_KEY)) }; }
 if (dataCfg.mode === 'live') dataCfg.mode = 'alpaca';
 // A setup link (made under Data source → Schwab) carries the helper and app password in #live=…
 // The part after # never reaches a server, and it is cleared from the address bar right away.
-const b64 = { enc: t => btoa(String.fromCharCode(...new TextEncoder().encode(t))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+const b64 = { enc: t => btoa(Array.from(new TextEncoder().encode(t), c => String.fromCharCode(c)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
   dec: t => new TextDecoder().decode(Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))) };
 if (location.hash.startsWith('#live=')) {
   try {
@@ -655,6 +669,7 @@ async function loadLive(s) {
   try {
     await (dataCfg.mode === 'schwab' ? loadSchwab(s) : loadAlpaca(s));
     if (stores[sym] !== s) return;
+    scrub(s, s.m1.length - 3);  // the newest minutes, now that there is a bid/ask to compare with
     s.inc = tickSize(last(s));
     requote(s);
     s.ready = true;
@@ -671,10 +686,12 @@ async function loadLive(s) {
 // Shared by both live sources once the history has arrived.
 function settle(s, m1, daily, emptyMsg) {
   if (!m1.length && !daily.length) throw new DataError(emptyMsg, 'empty');
+  s.m1 = m1;
+  scrub(s);
   // If the daily feed has no bar for the latest session yet, build one from its minute bars.
   const lm = m1[m1.length - 1], ld = daily[daily.length - 1];
   if (lm) { const day = lm.time - lm.time % 86400; if (!ld || ld.time < day) daily.push(rollup(day, m1.filter(b => b.time >= day))); }
-  s.m1 = m1; s.daily = daily;
+  s.daily = daily;
   s.prevClose = daily.length > 1 ? daily[daily.length - 2].close : daily[0].close;
 }
 async function loadAlpaca(s) {
@@ -694,11 +711,54 @@ async function loadAlpaca(s) {
 }
 function reloadSym(sym, keepView) { tiles.forEach(t => { if (t.cell.sym === sym) t.load(keepView); }); }
 
+/* Bad prints: a price far from both the minutes before it and the minutes after it (or, for the
+   newest minutes, from the bid/ask) is a misprint, so it is kept off the chart as thinkorswim does. */
+const median = a => { const b = [...a].sort((x, y) => x - y), h = b.length >> 1; return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2; };
+const quoteMid = s => s.qb > 0 && s.qa >= s.qb && s.qa - s.qb < s.qa * 0.02 ? (s.qa + s.qb) / 2 : null;
+// How far a price may stray: 1.5%, or ten times the usual one-minute range nearby when the stock is
+// swinging hard (after earnings, say), so real moves stay.
+function tolerance(s, ref, i) {
+  const m = s.m1, near = m.slice(Math.max(0, i - 10), i).concat(m.slice(i + 1, i + 11));
+  return ref * Math.max(0.015, near.length ? 10 * median(near.map(b => (b.high - b.low) / b.close)) : 0);
+}
+// Cleans the minute bars from index `from` on. Returns true if any bar changed.
+function scrub(s, from = 0) {
+  const m = s.m1;
+  let changed = false;
+  for (let i = Math.max(1, from); i < m.length; i++) {
+    const b = m[i], next = m.slice(i + 1, i + 4);
+    const before = median(m.slice(Math.max(0, i - 3), i).map(x => x.close));
+    const after = next.length >= 2 ? median(next.map(x => x.close)) : quoteMid(s);
+    if (after == null) continue;
+    let tol = before * 0.015;
+    const off = v => Math.abs(v - before) > tol && Math.abs(v - after) > tol;
+    if (!off(b.high) && !off(b.low)) continue;
+    tol = tolerance(s, before, i);
+    if (!off(b.high) && !off(b.low)) continue;
+    const o = off(b.open) ? null : b.open, c = off(b.close) ? null : b.close;
+    changed = true;
+    if (o == null && c == null) { m.splice(i--, 1); continue; }  // the whole minute was bad prints
+    b.open = o ?? c; b.close = c ?? o;
+    b.high = off(b.high) ? Math.max(b.open, b.close) : Math.max(b.high, b.open, b.close);
+    b.low = off(b.low) ? Math.min(b.open, b.close) : Math.min(b.low, b.open, b.close);
+  }
+  return changed;
+}
+// A live print far outside the bid/ask (or, with no usable quote, far from the last price) only
+// reaches the chart once a second print near it shows the move is real.
+function plausible(s, price) {
+  const mid = quoteMid(s), ref = mid ?? last(s);
+  const near = (v, r) => Math.abs(v - r) <= tolerance(s, r, s.m1.length);
+  if (!ref || near(price, ref)) { s.odd = null; return true; }
+  const ok = s.odd != null && near(price, s.odd);
+  s.odd = price;
+  return ok;
+}
 function addTrade(s, ms, price, size, tapeOnly) {
   const side = s.ask && price >= s.ask ? 'buy' : s.bid && price <= s.bid ? 'sell' : 'mid';
   s.prints.unshift({ t: etTime.format(ms), price, size, side });
   if (s.prints.length > 150) s.prints.length = 150;
-  if (tapeOnly) return;
+  if (tapeOnly || !plausible(s, price)) return;  // a bad print stays on the tape but off the chart
   const sec = etSec(ms), min = sec - sec % 60, day = sec - sec % 86400, before = last(s);
   const lb = s.m1[s.m1.length - 1];
   if (lb && lb.time === min) { lb.high = Math.max(lb.high, price); lb.low = Math.min(lb.low, price); lb.close = price; lb.volume += size; }
@@ -721,6 +781,7 @@ async function backfill() {
       const at = new Map(s.m1.map((b, i) => [b.time, i]));
       fresh.forEach(b => { const i = at.get(b.time); if (i != null) s.m1[i] = b; else s.m1.push(b); });
       s.m1.sort((a, b) => a.time - b.time);
+      scrub(s, s.m1.length - fresh.length - 3);
       s.sipUntil = cut;
       reloadSym(s.sym, true);
     } catch (e) {}
@@ -901,7 +962,7 @@ function onSchwabData(d) {
       let i = s.m1.length - 1;
       while (i >= 0 && s.m1[i].time > t) i--;
       if (i >= 0 && s.m1[i].time === t) s.m1[i] = bar; else s.m1.splice(i + 1, 0, bar);
-      if (s.m1[s.m1.length - 1] !== bar) reloadSym(s.sym, true);
+      if (scrub(s, i - 3) || s.m1[s.m1.length - 1] !== bar) reloadSym(s.sym, true);
     } else if (/_BOOK$/.test(d.service)) {
       const side = levels => {
         const out = [];
@@ -952,6 +1013,34 @@ function candleColors() {
 const tiles = new Map();
 let maxed = null;
 
+// Gray bands behind pre-market and after-hours bars. It is a chart plugin, so the chart draws it
+// under the grid and candles. Color and opacity are set in Colors.
+class SessionShade {
+  constructor(tile) { this.tile = tile; this.redraw = () => {}; }
+  attached({ requestUpdate }) { this.redraw = requestUpdate; }
+  paneViews() { return [this]; }
+  zOrder() { return 'bottom'; }
+  renderer() { return this; }
+  draw(target) {
+    const t = this.tile, L = t.list, ts = t.chart.timeScale(), r = ts.getVisibleLogicalRange();
+    if (!shadeFill || !t.intraday || !L || !L.length || !r) return;
+    const half = ts.options().barSpacing / 2, end = Math.min(L.length - 1, Math.ceil(r.to));
+    target.useBitmapCoordinateSpace(({ context: c, bitmapSize, horizontalPixelRatio: hr }) => {
+      c.fillStyle = shadeFill;
+      for (let i = Math.max(0, Math.floor(r.from)); i <= end; i++) {
+        if (!isExt(L[i].time)) continue;
+        let j = i;
+        while (j < end && isExt(L[j + 1].time)) j++;
+        // A run that reaches the newest bar carries on to the right edge.
+        const x1 = Math.round((ts.logicalToCoordinate(i) - half) * hr);
+        const x2 = j === L.length - 1 ? bitmapSize.width : Math.round((ts.logicalToCoordinate(j) + half) * hr);
+        c.fillRect(x1, 0, x2 - x1, bitmapSize.height);
+        i = j;
+      }
+    });
+  }
+}
+
 class Tile {
   constructor(cell) {
     this.cell = cell;
@@ -995,13 +1084,15 @@ class Tile {
         autoSize: true,
         layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
         rightPriceScale: { scaleMargins: { top: 0.06, bottom: 0.24 } },
-        timeScale: { rightOffset: 4 }
+        timeScale: { rightOffset: 4 },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       });
       this.chart.applyOptions(chartColors());
       this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
       this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
       this.candles = this.chart.addCandlestickSeries(candleColors());
       this.vw = this.chart.addLineSeries({ color: css('--vwap'), lineWidth: 1, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+      this.candles.attachPrimitive(this.shade = new SessionShade(this));
       // Our own tap detection: the chart library drops a second click that comes soon after the first.
       let down = null;
       body.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, at: Date.now() }; }, true);
@@ -1102,6 +1193,7 @@ class Tile {
     this.chart.applyOptions(chartColors());
     this.candles.applyOptions(candleColors());
     this.vw.applyOptions({ color: css('--vwap') });
+    this.shade.redraw();
     this.volume.setData(this.volData(bars(this.cell.sym, this.cell.tf)));
     this.syncLines();
     this.watermark(true);
@@ -1775,7 +1867,7 @@ paintBell();
 const COLOR_KEY = 'multichart-colors-v1';
 const COLOR_GROUPS = [
   ['Workspace', [['bg', 'App background'], ['head', 'Panel headers'], ['line', 'Borders'], ['fg', 'Text'], ['muted', 'Secondary text'], ['accent', 'Buttons and highlights'], ['pop', 'Menus']]],
-  ['Charts', [['chart-bg', 'Chart background'], ['grid', 'Grid lines'], ['up', 'Up candles and volume'], ['down', 'Down candles and volume'], ['vwap', 'VWAP line'], ['draw', 'Drawings'], ['alert', 'Alert lines']]],
+  ['Charts', [['chart-bg', 'Chart background'], ['grid', 'Grid lines'], ['up', 'Up candles and volume'], ['down', 'Down candles and volume'], ['vwap', 'VWAP line'], ['ext', 'Pre-market and after-hours'], ['draw', 'Drawings'], ['alert', 'Alert lines']]],
   ['Level II', [['l2-1', 'Level 1 (best bid and ask)'], ['l2-2', 'Level 2'], ['l2-3', 'Level 3'], ['l2-4', 'Level 4'], ['l2-5', 'Level 5'], ['l2-6', 'Level 6 and deeper'], ['l2-text', 'Level text'], ['panel', 'Level II and T&S background']]],
   ['Time & Sales', [['ts-buy', 'Buys (at the ask)'], ['ts-sell', 'Sells (at the bid)'], ['ts-mid', 'Between bid and ask']]]
 ];
@@ -1788,7 +1880,7 @@ const THEMES = {
   },
   'Light': {
     bg: '#e9edf1', panel: '#ffffff', 'chart-bg': '#ffffff', head: '#f4f6f8', line: '#cfd6de', grid: '#eef1f5', fg: '#131b24',
-    muted: '#5b6878', accent: '#2457d6', up: '#0f8a62', down: '#d1433a', vwap: '#c026d3', pop: '#ffffff', 'l2-6': '#c9d1da',
+    muted: '#5b6878', accent: '#2457d6', up: '#0f8a62', down: '#d1433a', vwap: '#c026d3', ext: '#5b6878', pop: '#ffffff', 'l2-6': '#c9d1da',
     'ts-buy': '#0f8a62', 'ts-sell': '#d1433a', 'ts-mid': '#131b24'
   }
 };
@@ -1797,6 +1889,14 @@ COLOR_GROUPS.forEach(([, list]) => list.forEach(([k]) => { DEFAULT_COLORS[k] = c
 let colors = {};
 try { colors = JSON.parse(localStorage.getItem(COLOR_KEY)) || {}; } catch (e) {}
 
+// Extended-hours shading: the 'ext' color at this opacity (percent).
+const shadePct = () => colors.extAlpha ?? 14;
+let shadeFill = '';
+function paintShade() {
+  const pct = shadePct();
+  shadeFill = pct ? css('--ext') + Math.round(pct * 2.55).toString(16).padStart(2, '0') : '';
+  tiles.forEach(t => t.shade && t.shade.redraw());
+}
 const isLight = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 140; };
 function applyColors() {
   const root = document.documentElement;
@@ -1804,6 +1904,7 @@ function applyColors() {
     if (colors[k]) root.style.setProperty('--' + k, colors[k]); else root.style.removeProperty('--' + k);
   });
   root.style.colorScheme = isLight(css('--bg')) ? 'light' : 'dark';
+  paintShade();
   tiles.forEach(t => t.retheme());
   try { localStorage.setItem(COLOR_KEY, JSON.stringify(colors)); } catch (e) {}
 }
@@ -1818,12 +1919,19 @@ function openColors() {
     <h4>Start from a theme</h4>
     <div class="themes">${Object.keys(THEMES).map(n => `<button data-theme-name="${n}">${n}</button>`).join('')}</div>
     ${COLOR_GROUPS.map(([group, list]) => `<h4>${group}</h4>` + list.map(([k, label]) =>
-      `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || DEFAULT_COLORS[k]}"></label>`).join('')).join('')}
+      `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || DEFAULT_COLORS[k]}"></label>` +
+      (k === 'ext' ? `<label class="crow"><span>Shading opacity <b id="extPct">${shadePct()}%</b></span><input type="range" id="extAlpha" min="0" max="50" step="1" value="${shadePct()}"></label>` : '')).join('')).join('')}
     <button class="btn reset" id="resetColors">Reset to default colors</button></div>`;
   sheet.hidden = false;
   sheet.querySelector('#sheetClose').onclick = () => { sheet.hidden = true; };
   sheet.querySelectorAll('input[type=color]').forEach(inp => inp.addEventListener('input', () => { colors[inp.dataset.k] = inp.value; applyColors(); }));
-  sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName] }; applyColors(); openColors(); });
+  sheet.querySelector('#extAlpha').addEventListener('input', e => {
+    colors.extAlpha = +e.target.value;
+    sheet.querySelector('#extPct').textContent = colors.extAlpha + '%';
+    paintShade();
+    try { localStorage.setItem(COLOR_KEY, JSON.stringify(colors)); } catch (err) {}
+  });
+  sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName], extAlpha: colors.extAlpha }; applyColors(); openColors(); });
   sheet.querySelector('#resetColors').onclick = () => { colors = {}; applyColors(); openColors(); };
 }
 document.getElementById('colorsBtn').addEventListener('click', () => { if (sheet.hidden || sheet.dataset.kind !== 'colors') openColors(); else sheet.hidden = true; });
@@ -1841,17 +1949,47 @@ function paintDataStatus() {
   el.dataset.state = feed.state;
   el.innerHTML = `<i></i><span>${esc(text)}</span>`;
 }
+// All of the app's settings as one code, to carry them to another device or to the Home Screen app,
+// which iPhone keeps apart from Safari.
+const SETTINGS_TAG = 'MC1.';
+function settingsCode() {
+  save();
+  const all = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('multichart-')) all[k] = localStorage.getItem(k); }
+  return SETTINGS_TAG + b64.enc(JSON.stringify(all));
+}
+function loadSettings(code) {
+  let all;
+  try { all = JSON.parse(b64.dec(code.replace(/\s+/g, '').slice(SETTINGS_TAG.length))); } catch (e) {}
+  if (!code.trim().startsWith(SETTINGS_TAG) || !all || typeof all !== 'object' || !Object.keys(all).length) return false;
+  Object.keys(localStorage).filter(k => k.startsWith('multichart-')).forEach(k => localStorage.removeItem(k));
+  Object.entries(all).forEach(([k, v]) => { if (k.startsWith('multichart-') && typeof v === 'string') localStorage.setItem(k, v); });
+  location.reload();
+  return true;
+}
 function openData() {
   closePop();
   sheet.dataset.kind = 'data';
   sheet.setAttribute('aria-label', 'Data source');
   const mode = dataCfg.mode;
+  // On a new device (or a new Home Screen app), offer to bring settings over before anything else.
+  const fresh = mode === 'schwab' && !dataCfg.pass;
+  const move = `<div class="movebox">
+      <h4>${fresh ? 'Coming from Safari or another device?' : 'Move your setup'}</h4>
+      <p>${fresh ? 'Paste the settings you copied there (under <b>Move your setup</b>) to bring over your layouts, colors, drawings, alerts and live data in one step.'
+        : 'Copy all your settings here, then paste them into the Home Screen app or another device: layouts, tabs, colors, drawings, alerts, zoom and live data. They include your app password, so only send them to yourself.'}</p>
+      ${fresh ? '' : `<div class="row2"><button class="btn" id="dsCopyAll">Copy all my settings</button></div>
+      <label class="field" id="dsAllBox" hidden>Your settings (select all and copy)<input id="dsAll" readonly></label>`}
+      <label class="field">Paste settings from another device<input id="dsPasteAll" autocomplete="off" spellcheck="false" placeholder="MC1.…"></label>
+      <div class="row2"><button class="btn${fresh ? ' primary' : ''}" id="dsLoadAll">Load settings</button></div>
+    </div>`;
   sheet.innerHTML = `<div class="zin">
     <div class="sheet-head"><h3>Data source</h3><button class="ib" id="sheetClose" aria-label="Close data source">${CLOSE_X}</button></div>
     <div class="seg" role="group" aria-label="Data source">
       ${[['demo', 'Demo'], ['schwab', 'Schwab'], ['alpaca', 'Alpaca']].map(([m, label]) => `<button data-mode="${m}" aria-pressed="${mode === m}">${label}</button>`).join('')}
     </div>
     <div class="status"></div>
+    ${fresh ? move : ''}
     <div class="srcbox" data-for="schwab" ${mode === 'schwab' ? '' : 'hidden'}>
       <h4>Your Schwab helper</h4>
       <label class="field">Helper address<input id="dsHelper" autocomplete="off" spellcheck="false" placeholder="https://multichart-schwab.yourname.workers.dev" value="${esc(dataCfg.helper)}"></label>
@@ -1904,7 +2042,8 @@ function openData() {
         <label class="field">Data URL<input id="dsBase" placeholder="https://data.alpaca.markets" value="${esc(dataCfg.base)}"></label>
         <label class="field">Stream URL<input id="dsStream" placeholder="wss://stream.data.alpaca.markets/v2/iex" value="${esc(dataCfg.stream)}"></label>
       </details>
-    </div></div>`;
+    </div>
+    ${fresh ? '' : move}</div>`;
   sheet.hidden = false;
   paintDataStatus();
   const $ = id => sheet.querySelector('#' + id);
@@ -1956,6 +2095,19 @@ function openData() {
     } catch (e) { note(e.message); $('dsFinish').disabled = false; }
   };
   if (mode === 'schwab') signState();
+  // Moving settings
+  if ($('dsCopyAll')) $('dsCopyAll').onclick = async () => {
+    const code = settingsCode();
+    try { await navigator.clipboard.writeText(code); toast('Settings copied. Open the Home Screen app (or the other device), tap the data badge at the top, and paste them.'); }
+    catch (e) { $('dsAllBox').hidden = false; $('dsAll').value = code; $('dsAll').select(); }
+  };
+  $('dsLoadAll').onclick = () => {
+    const code = $('dsPasteAll').value.trim();
+    if (!code) return note('Paste the settings you copied first.');
+    if (!code.startsWith(SETTINGS_TAG)) return note('That is not a settings code. On the other device, tap Copy all my settings and paste what it copies.');
+    if (!fresh && !confirm('Replace the layouts, colors, alerts and settings in this app with the pasted ones?')) return;
+    if (!loadSettings(code)) note('Those settings could not be read. Copy them again and paste the whole thing.');
+  };
   // Alpaca
   $('dsSave').onclick = () => {
     const key = $('dsKey').value.trim(), secret = $('dsSecret').value.trim();
@@ -1974,8 +2126,8 @@ document.documentElement.style.setProperty('--scale', uiScale());
 render();
 setFeed(isLive() ? 'connecting' : 'demo');
 syncStream();
-// A new device only lacks the app password: ask for it right away.
-if (dataCfg.mode === 'schwab' && !dataCfg.pass) { openData(); sheet.querySelector('#dsPass').focus(); }
+// A new device only lacks the app password (or its settings): open the data panel right away.
+if (dataCfg.mode === 'schwab' && !dataCfg.pass) openData();
 setInterval(() => {
   if (isLive()) { wanted().forEach(sym => { const s = store(sym); if (ready(s)) requote(s); }); syncStream(); }
   else wanted().forEach(sym => tick(store(sym)));
