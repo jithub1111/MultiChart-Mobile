@@ -34,7 +34,7 @@ Cloudflare Workers. The helper keeps your Schwab app keys and your sign-in, so t
 - **Last price and bid/ask**: real time
 - **Level II**: real Nasdaq and NYSE order books
 - **Time & Sales**: built from Schwab's last-trade updates (Schwab offers no full tape feed, so busy stocks show fewer prints than thinkorswim)
-- **Fundamentals**: key statistics come from Schwab. The helper also fetches news from Yahoo Finance and Google News, company details and filings from the SEC, and a short company description from Wikipedia, since a web page can't read those sites directly
+- **Fundamentals**: key statistics come from Schwab. The helper also fetches news from Yahoo Finance and Google News, company details and filings from the SEC, and a short company description from Wikipedia, since a web page can't read those sites directly. The SEC turns away automated requests that don't include a contact email, so the first time the Profile or Filings tab needs one it asks for an email. The helper saves it (not the app's public code) and sends it only to the SEC
 - Schwab asks you to sign in again every 7 days. The app reminds you a day ahead
 
 ### Setting up the Schwab helper
