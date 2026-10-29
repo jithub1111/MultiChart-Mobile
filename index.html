@@ -2,6 +2,7 @@
 <!-- Added to the Home Screen, the app opens full screen without Safari's bars. -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -67,7 +68,8 @@ button { cursor: pointer; }
 /* when the buttons no longer fit, they wrap onto a second line, lined up on the right under Colors */
 .bar { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; } .bar > * { flex-shrink: 0; }
 .brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; }
-.brand span { color: var(--accent); }
+/* "chart" shades from cyan through violet to the neon pink of the app icon */
+.brand span { background: linear-gradient(90deg, #22d3ee, #a855f7 60%, #ff4fd8); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .feed {
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 99px;
   border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
