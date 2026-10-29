@@ -2,6 +2,7 @@
 <!-- Added to the Home Screen, the app opens full screen without Safari's bars. -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -66,8 +67,10 @@ button { cursor: pointer; }
 .bar { display: flex; align-items: center; gap: 8px; padding-block: 8px; min-width: 0; }
 /* when the buttons no longer fit, they wrap onto a second line, lined up on the right under Colors */
 .bar { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; } .bar > * { flex-shrink: 0; }
-.brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; }
-.brand span { color: var(--accent); }
+.brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; display: inline-flex; align-items: baseline; }
+/* The logo: the M is a glowing price line, and "chart" shades from cyan to violet to magenta. */
+.brand svg { width: .84em; height: .72em; margin-right: .02em; overflow: visible; filter: drop-shadow(0 0 3px #7c6cff99); }
+.brand span { background: linear-gradient(90deg, #22d3ee, #7c6cff 55%, #f05cf0); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .feed {
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 99px;
   border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 600;
@@ -505,7 +508,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 </style>
 
 <header class="bar">
-  <div class="brand">Multi<span>chart</span></div>
+  <div class="brand" role="img" aria-label="Multichart"><svg viewBox="0 0 30 24" aria-hidden="true"><defs><linearGradient id="brandM" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#7c6cff"/><stop offset="1" stop-color="#f05cf0"/></linearGradient></defs><polyline points="3,21 9,3 15,15 21,3 27,21" fill="none" stroke="url(#brandM)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>ulti<span>chart</span></div>
   <button class="feed" id="feedBtn" data-state="demo" aria-label="Data source"><i></i><span class="lbl">Demo data</span></button>
   <button class="btn primary" id="editBtn" aria-pressed="false">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
