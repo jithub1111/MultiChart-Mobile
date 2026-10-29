@@ -1783,7 +1783,7 @@ class Tile {
       const base = {
         autoSize: true,
         layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
-        timeScale: { rightOffset: 4, minBarSpacing: 0.05 },
+        timeScale: { rightOffset: 4, minBarSpacing: 0.01 },  // thin enough for all 16 days of minute bars on a phone
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       };
       this.chart = LightweightCharts.createChart(sep ? this.$('.cmain') : body, { ...base,
@@ -1838,6 +1838,22 @@ class Tile {
         const r = body.getBoundingClientRect();
         this.onChartTap(e.clientX - r.left, e.clientY - r.top);
       }, true);
+      // Double-click or double-tap the chart to zoom out over everything that's loaded, as in thinkorswim.
+      // (On the price or time scale, a double-click still resets that scale.)
+      const inPlot = (x, y) => { const r = body.getBoundingClientRect(); return x - r.left <= this.plotWidth() && y - r.top <= body.clientHeight - (this.vchart || this.chart).timeScale().height(); };
+      body.addEventListener('dblclick', e => { if (!this.mode && inPlot(e.clientX, e.clientY)) this.zoomAll(); }, true);
+      let touch = null, tap = null;
+      body.addEventListener('touchstart', e => { const t = e.touches[0]; touch = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: Date.now() } : null; }, { capture: true, passive: true });
+      body.addEventListener('touchend', e => {
+        const t = e.changedTouches[0], now = Date.now(), was = touch;
+        touch = null;
+        if (!was || e.touches.length || this.mode || now - was.at > 300 || Math.hypot(t.clientX - was.x, t.clientY - was.y) > 10) { tap = null; return; }
+        if (tap && now - tap.at < 400 && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) < 30 && inPlot(t.clientX, t.clientY)) {
+          tap = null;
+          e.preventDefault();  // and no double-tap page zoom
+          this.zoomAll();
+        } else tap = { x: t.clientX, y: t.clientY, at: now };
+      }, { capture: true, passive: false });
       // Highlight to zoom: drag across the chart, and that stretch of time fills it.
       const band = document.createElement('div'), reset = document.createElement('button');
       band.className = 'hlband'; band.hidden = true;
@@ -2101,6 +2117,17 @@ class Tile {
     b.textContent = !this.intraday ? `Back to ${this.range}` : this.cell.days > 1 ? `All ${this.cell.days} days` : 'Whole day';
     b.style.right = (this.chart.priceScale('right').width() + 6) + 'px';
     b.hidden = false;
+  }
+  // Everything that's loaded, as far as the chart zooms out. The button on the chart goes back.
+  zoomAll() {
+    const n = (this.list || []).length;
+    if (!n) return;
+    this.autoFit = false;
+    const all = () => this.chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: this.list.length + 3 });
+    all();
+    this.showReset();
+    // Zoomed out, the price labels can get wider and squeeze the plot. Fit again once they have.
+    requestAnimationFrame(() => requestAnimationFrame(all));
   }
   // Intraday charts open on their chosen number of days (pre-market on), daily and weekly ones on their chosen range.
   // Until you scroll or zoom, the view keeps that framing as bars arrive and the panel resizes.
