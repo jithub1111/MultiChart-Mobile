@@ -65,7 +65,7 @@ button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* top bar */
-.bar { display: flex; align-items: center; gap: 8px; padding-block: 8px; min-width: 0; }
+.bar { display: flex; align-items: center; gap: 7px; padding-block: 8px; min-width: 0; }
 /* when the buttons no longer fit, they wrap onto a second line, lined up on the right under Colors */
 .bar { flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; } .bar > * { flex-shrink: 0; }
 .brand { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; }
@@ -84,6 +84,18 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .feed[data-state="live"] { color: var(--fg); }
 .feed[data-state="error"] i { background: #e8644f; animation: none; }
 @keyframes pulse { 50% { opacity: .3; } }
+/* hide the top bar (and the tabs) for more chart space; a small arrow at the top brings it back */
+/* kept narrow (no box, tighter gaps, slimmer zoom label) so the tabs still fit up in the bar */
+.btn.hidebar { width: 16px; margin-inline: -2px; padding: 0; justify-content: center; border-color: transparent; background: none; color: var(--muted); }
+.btn.hidebar:hover { color: var(--fg); }
+.hidebar svg { width: 12px; height: 12px; }
+.showbar { display: none; position: fixed; z-index: 60; left: 50%; top: env(safe-area-inset-top, 0px); transform: translateX(-50%);
+  width: 34px; height: 13px; padding: 0; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 7px 7px;
+  background: color-mix(in srgb, var(--head) 85%, transparent); color: var(--muted); align-items: center; justify-content: center; }
+.showbar:hover { color: var(--fg); background: var(--hover); }
+.showbar svg { width: 10px; height: 10px; }
+html.nobar .bar, html.nobar .tabs { display: none; }
+html.nobar .showbar { display: inline-flex; }
 .spacer { flex: 1; }
 .btn {
   display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px;
@@ -340,7 +352,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .zoomctl { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; height: 32px; background: var(--head); }
 .zoomctl button { border: 0; background: none; height: 30px; padding: 0 10px; font-size: 16px; font-weight: 600; display: inline-flex; align-items: center; }
 .zoomctl button:hover:not(:disabled) { background: var(--hover); }
-.zoomctl .zlabel { font-size: 11px; min-width: 50px; justify-content: center; font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 4px; border-inline: 1px solid var(--line); }
+.zoomctl .zlabel { font-size: 11px; min-width: 42px; justify-content: center; font-variant-numeric: tabular-nums; color: var(--muted); padding: 0 4px; border-inline: 1px solid var(--line); }
 .zoomctl button:disabled { opacity: .35; cursor: default; }
 @media (max-width: 560px) {
   .bar { gap: 5px; } .feed { padding: 3px 7px; } .seg button { padding: 0 8px; }
@@ -514,6 +526,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 <header class="bar">
   <div class="brand">Multi<span>chart</span></div>
   <button class="feed" id="feedBtn" data-state="demo" aria-label="Data source"><i></i><span class="lbl">Demo data</span></button>
+  <button class="btn hidebar" id="hideBar" aria-label="Hide the top bar" title="Hide the top bar">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8l3.5-3.5L9.5 8"/></svg>
+  </button>
   <button class="btn primary" id="editBtn" aria-pressed="false">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
     <span class="lbl">Layout</span>
@@ -535,6 +550,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
   <span class="zoomctl" id="zoomctl" role="group" aria-label="Zoom"></span>
 </header>
 <nav class="tabs" id="tabs" aria-label="Workspaces"></nav>
+<button class="showbar" id="showBar" aria-label="Show the top bar" title="Show the top bar">
+  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4l3.5 3.5L9.5 4"/></svg>
+</button>
 <main class="grid" id="grid"></main>
 <div class="pop" id="pop" hidden></div>
 <aside class="sheet" id="sheet" hidden aria-label="Colors"></aside>
@@ -2934,6 +2952,17 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
 document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; orientLayout(); render(); });
 document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; orientLayout(); render(); });
+// Hide the top bar (tabs too) for more room; remembered on this device.
+const BAR_KEY = 'multichart-nobar-v1';
+function setBarHidden(on) {
+  document.documentElement.classList.toggle('nobar', on);
+  try { localStorage.setItem(BAR_KEY, JSON.stringify(on)); } catch (e) {}
+  closePop();
+  if (!on) placeTabs();
+}
+try { if (JSON.parse(localStorage.getItem(BAR_KEY))) document.documentElement.classList.add('nobar'); } catch (e) {}
+document.getElementById('hideBar').addEventListener('click', () => setBarHidden(true));
+document.getElementById('showBar').addEventListener('click', () => setBarHidden(false));
 
 /* ---------- workspace tabs ---------- */
 function renderTabs() {
