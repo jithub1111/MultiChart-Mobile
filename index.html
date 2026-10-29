@@ -1830,22 +1830,18 @@ class Tile {
           dst.setVisibleLogicalRange(r);
         });
         follow(pts, vts); follow(vts, pts);
-        // One crosshair across both.
-        let echo = false;
-        this.chart.subscribeCrosshairMove(p => {
-          if (echo) return;
-          echo = true;
-          const d = p.time !== undefined && p.logical !== undefined ? this.volume.dataByIndex(Math.round(p.logical)) : null;
-          if (d) this.vchart.setCrosshairPosition(d.value, p.time, this.volume); else this.vchart.clearCrosshairPosition();
-          echo = false;
+        // One crosshair across both. Only the chart under the pointer leads: the charts also report their
+        // crosshair when new bars arrive, and following those put the price chart's crosshair back on a candle.
+        let over = null;
+        const share = (src, dst, series, value) => src.subscribeCrosshairMove(p => {  // series() is the other chart's series
+          if (p.sourceEvent) over = src;
+          if (over !== src) return;
+          if (!p.point) { over = null; dst.clearCrosshairPosition(); return; }  // the pointer left this chart
+          const d = p.time !== undefined && p.logical !== undefined ? series().dataByIndex(Math.round(p.logical)) : null;
+          if (d) dst.setCrosshairPosition(value(d), p.time, series()); else dst.clearCrosshairPosition();
         });
-        this.vchart.subscribeCrosshairMove(p => {
-          if (echo) return;
-          echo = true;
-          const d = p.time !== undefined && p.logical !== undefined ? this.candles.dataByIndex(Math.round(p.logical)) : null;
-          if (d) this.chart.setCrosshairPosition(d.close, p.time, this.candles); else this.chart.clearCrosshairPosition();
-          echo = false;
-        });
+        share(this.chart, this.vchart, () => this.volume, d => d.value);
+        share(this.vchart, this.chart, () => this.candles, d => d.close);
       } else {
         this.volume = this.chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
         this.chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
