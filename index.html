@@ -1007,7 +1007,7 @@ function closeStream() {
 function syncStream() {
   if (!isLive() || held) return closeStream();
   if (!leader) { closeStream(); return askStream(); }
-  if (!ws) { if (!wsTimer) openStream(); return; }
+  if (!ws) { if (!wsTimer && !bumped) openStream(); return; }
   if (!ws.authed) return;
   if (ws.schwab) return syncSchwab();
   const want = new Set([...wanted()].filter(x => stores[x] && stores[x].ready).concat(...others().map(o => o.charts)));
@@ -1016,9 +1016,29 @@ function syncStream() {
   const add = [...want].filter(x => !wsSyms.has(x)).slice(0, Math.max(0, 30 - wsSyms.size));
   if (add.length) { ws.send(JSON.stringify({ action: 'subscribe', trades: add, quotes: add })); add.forEach(x => wsSyms.add(x)); }
 }
+// iPhone and iPad cut a live connection when the app goes to the background or the screen locks, often
+// without telling the page, so it can sit there silent. Coming back to the app, getting back online,
+// or Schwab's heartbeat going quiet reconnects right away.
+let bumped = false;
+function reviveStream(looked) {
+  if (!isLive() || held || !leader || document.hidden) return;
+  if (bumped && !looked) return;
+  if (ws && ws.readyState === undefined) return;  // still getting the session
+  const stale = ws && ws.beats && Date.now() - ws.heard > 45000;
+  if (ws && ws.readyState <= 1 && !stale && !ws.bumped) return;
+  if (!ws && wsTimer && !looked) return;  // a retry is already on its way
+  bumped = false; wsTries = 0;
+  closeStream();
+  openStream();
+}
+document.addEventListener('visibilitychange', () => reviveStream(true));
+addEventListener('pageshow', () => reviveStream(true));
+addEventListener('online', () => reviveStream(true));
+setInterval(() => reviveStream(false), 15000);
 function openStream() {
   wsTimer = 0;
   if (held || !leader) return;
+  bumped = false;
   if (dataCfg.mode === 'schwab') return openSchwab();
   if (feed.state !== 'error') setFeed('connecting');
   let sock;
@@ -1137,6 +1157,8 @@ async function openSchwab() {
   sock.onmessage = e => {
     let m;
     try { m = JSON.parse(e.data); } catch (err) { return; }
+    sock.heard = Date.now();
+    if ((m.notify || []).some(n => n.heartbeat)) sock.beats = true;
     [...(m.response || []), ...(m.notify || [])].forEach(r => {
       const code = r.content && r.content.code;
       if (r.service === 'ADMIN' && r.command === 'LOGIN') {
@@ -1151,8 +1173,10 @@ async function openSchwab() {
           sock.close();
         }
       } else if (code === 12 || code === 30) {
-        setFeed('error', 'Schwab live data was opened somewhere else (another tab or device), which closed it here. Retrying every 30 seconds.');
-        wsTries = 5;
+        // Schwab allows one live connection per account. Taking it back right away would just knock the
+        // other device off in turn, so this one waits until it is looked at again (or tapped).
+        sock.bumped = bumped = true;
+        setFeed('error', 'Schwab live data is open on another device or tab, so it paused here. Come back to this app, or tap here, to take it back.');
       } else if (code === 19) setFeed('error', 'Schwab says too many symbols are streaming at once.');
     });
     (m.data || []).forEach(onSchwabData);
@@ -1161,8 +1185,10 @@ async function openSchwab() {
   sock.onclose = () => {
     if (ws !== sock) return;
     ws = null; sKeys = {};
-    if (!isLive() || sock.fatal) return;
-    if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Schwab. Reconnecting.' : 'Could not open the live connection to Schwab. Retrying.');
+    if (!isLive() || sock.fatal || sock.bumped) return;
+    // A dropped connection usually comes right back, so the first retries just say Connecting.
+    if (sock.authed && wsTries < 2) setFeed('connecting', 'Reconnecting to Schwab');
+    else if (feed.state !== 'error') setFeed('error', sock.authed ? 'Lost the live connection to Schwab. Reconnecting.' : 'Could not open the live connection to Schwab. Retrying.');
     wsTimer = setTimeout(openStream, Math.min(30000, 2000 * 2 ** wsTries++));
   };
 }
@@ -3432,7 +3458,7 @@ function paintDataStatus() {
   if (!el) return;
   const text = {
     demo: dataCfg.mode === 'schwab' ? 'Enter your app password below and tap Save to go live with Schwab.' : 'Using demo data. Prices are simulated.',
-    connecting: 'Connecting to Alpaca…',
+    connecting: feed.msg || (dataCfg.mode === 'schwab' ? 'Connecting to Schwab…' : 'Connecting to Alpaca…'),
     live: dataCfg.mode === 'schwab' ? 'Live. Prices, Level II and trades are streaming from Schwab.' : 'Live. Prices and trades are streaming from Alpaca (IEX).',
     error: feed.msg || 'Something went wrong.'
   }[feed.state];
@@ -3607,7 +3633,7 @@ function openData() {
   };
   $('dsForget').onclick = () => { applyData({ mode: 'demo', key: '', secret: '' }); openData(); };
 }
-document.getElementById('feedBtn').addEventListener('click', () => { if (sheet.hidden || sheet.dataset.kind !== 'data') openData(); else sheet.hidden = true; });
+document.getElementById('feedBtn').addEventListener('click', () => { reviveStream(true); if (sheet.hidden || sheet.dataset.kind !== 'data') openData(); else sheet.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden = true; });
 applyColors();
 document.documentElement.style.setProperty('--scale', uiScale());
