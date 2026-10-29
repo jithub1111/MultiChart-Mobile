@@ -13,7 +13,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Open+Sans:wght@400;600;700&display=swap">
 <style>
 /* Layout: full-screen dark trading workspace (single deliberate dark look).
    Thin top bar, then rows of tiles (chart / Level II / Time & Sales) with draggable splitters. */
@@ -29,6 +29,7 @@
   --accent: #4f8cff;
   --up: #23c26b;
   --down: #f2545b;
+  --flat: var(--up);  /* candles that close where they opened */
   --vwap: #e45cf0;
   --ext: #9aa4b0;
   --pop: #171b21;
@@ -171,6 +172,9 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .chg.up { color: var(--up); } .chg.down { color: var(--down); }
 .ba b { font-weight: 500; }
 .ba .bid { color: var(--down); } .ba .ask { color: var(--up); }
+/* TOS Theme Full: thinkorswim's plain sans-serif numbers, with the bid in green and the ask in red */
+.tos .th { font-family: "Open Sans", "Segoe UI", system-ui, sans-serif; }
+.tos .ba .bid { color: var(--up); } .tos .ba .ask { color: var(--down); }
 .name { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @container (max-width: 470px) { .ba { display: none; } }
 @container (max-width: 330px) {
@@ -485,6 +489,7 @@ button.feed:hover { background: var(--hover); color: var(--fg); }
 .crow input::-webkit-color-swatch-wrapper { padding: 2px; }
 .crow input::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .crow input[type=range] { width: 130px; height: 28px; border: 0; border-radius: 0; accent-color: var(--accent); }
+.crow input[type=checkbox] { width: 22px; height: 22px; margin: 3px 11px; border: 0; accent-color: var(--accent); }
 .crow b { font-family: var(--num); font-weight: 500; color: var(--muted); }
 .sheet .reset { margin-top: 18px; width: 100%; justify-content: center; }
 .sheet p, .sheet li { font-size: 13px; line-height: 1.5; color: var(--muted); }
@@ -1201,19 +1206,26 @@ const ICON = {
   popout: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 2.5h4.5V7M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4"/></svg>'
 };
 const KINDS = { chart: 'Chart', l2: 'Level II', ts: 'Time & Sales', lts: 'Level II + T&S', fund: 'Fundamentals', watch: 'Watchlist' };
+const MONO = "'JetBrains Mono', ui-monospace, monospace", TOS_FONT = "'Open Sans', 'Segoe UI', system-ui, sans-serif";
+// TOS Theme Full also draws the chart the way thinkorswim does: dotted grid, plain sans-serif labels
+// in bright text, solid volume bars, dashed lines between days, and no dotted line at the last price.
+const tosLook = () => !!colors.tos;
 function chartColors() {
-  const muted = css('--muted'), line = css('--line'), grid = css('--grid');
+  const muted = css('--muted'), line = css('--line'), grid = css('--grid'), tos = tosLook(), style = tos ? LightweightCharts.LineStyle.SparseDotted : LightweightCharts.LineStyle.Solid;
   return {
-    layout: { background: { type: 'solid', color: css('--chart-bg') }, textColor: muted },
-    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    layout: { background: { type: 'solid', color: css('--chart-bg') }, textColor: tos ? css('--fg') : muted, fontFamily: tos ? TOS_FONT : MONO },
+    grid: { vertLines: { color: grid, style }, horzLines: { color: grid, style } },
     rightPriceScale: { borderColor: line },
     timeScale: { borderColor: line },
     crosshair: { vertLine: { color: muted, labelBackgroundColor: css('--head') }, horzLine: { color: muted, labelBackgroundColor: css('--head') } }
   };
 }
+// Hollow up candles (as in thinkorswim) are just an outline: the body is the chart's background.
+// The chart colors the last price's label and line like the candle's body, so for those the tile draws its own.
 function candleColors() {
-  const up = css('--up'), down = css('--down');
-  return { upColor: up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down };
+  const up = css('--up'), down = css('--down'), hollow = !!colors.hollow;
+  return { upColor: hollow ? css('--chart-bg') : up, downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down,
+    priceLineVisible: !hollow && !tosLook(), lastValueVisible: !hollow };
 }
 const tiles = new Map();
 let maxed = null;
@@ -1261,6 +1273,7 @@ function dayStart(list, n = 1) {
 
 // Gray bands behind pre-market and after-hours bars. It is a chart plugin, so the chart draws it
 // under the grid and candles. Color and opacity are set in Colors.
+const TOS_DAYLINE = '#595959';
 class SessionShade {
   constructor(tile, chart) { this.tile = tile; this.chart = chart; this.redraw = () => {}; }
   attached({ requestUpdate }) { this.redraw = requestUpdate; }
@@ -1272,10 +1285,21 @@ class SessionShade {
     try { this.paint(target); } catch (e) { reportError(e); }
   }
   paint(target) {
-    const t = this.tile, L = t.list, ts = (this.chart || t.chart).timeScale(), r = ts.getVisibleLogicalRange();
-    if (!shadeFill || !t.intraday || !L || !L.length || !r) return;
+    const t = this.tile, L = t.list, ts = (this.chart || t.chart).timeScale(), r = ts.getVisibleLogicalRange(), lines = tosLook();
+    if ((!shadeFill && !lines) || !t.intraday || !L || !L.length || !r) return;
     const half = ts.options().barSpacing / 2, end = Math.min(L.length - 1, Math.ceil(r.to));
     target.useBitmapCoordinateSpace(({ context: c, bitmapSize, horizontalPixelRatio: hr }) => {
+      // thinkorswim's dashed line where each day starts
+      if (lines) {
+        c.fillStyle = TOS_DAYLINE;
+        const w = Math.max(1, Math.round(hr)), dash = Math.round(4 * hr), gap = Math.round(3 * hr);
+        for (let i = Math.max(1, Math.floor(r.from)); i <= end; i++) {
+          if (Math.floor(L[i].time / 86400) === Math.floor(L[i - 1].time / 86400)) continue;
+          const x = Math.round((ts.logicalToCoordinate(i) - half) * hr);
+          for (let y = 0; y < bitmapSize.height; y += dash + gap) c.fillRect(x, y, w, dash);
+        }
+      }
+      if (!shadeFill) return;
       c.fillStyle = shadeFill;
       for (let i = Math.max(0, Math.floor(r.from)); i <= end; i++) {
         if (!isExt(L[i].time)) continue;
@@ -1782,7 +1806,7 @@ class Tile {
       if (sep) body.insertAdjacentHTML('afterbegin', '<div class="cmain"></div><div class="cvol"></div>');
       const base = {
         autoSize: true,
-        layout: { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: chartFont() },
+        layout: { fontFamily: MONO, fontSize: chartFont() },
         timeScale: { rightOffset: 4, minBarSpacing: 0.01 },  // thin enough for all 16 days of minute bars on a phone
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       };
@@ -2144,8 +2168,25 @@ class Tile {
   get range() { return RANGES[this.cell.range] ? this.cell.range : RANGE_DEFAULT[this.cell.tf] || '6M'; }
   get showVwap() { return this.cell.vwap && this.intraday; }
   volData(list) {
-    const up = css('--up') + '99', down = css('--down') + '99';
+    const a = tosLook() ? '' : '99', up = css('--up') + a, down = css('--down') + a;
     return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
+  }
+  // The last price's label (and line) on hollow candles, in the up, down or flat color.
+  paintLastLabel() {
+    const lb = this.list && this.list[this.list.length - 1];
+    if (!colors.hollow || !lb) {
+      if (this.lastLabel) { this.candles.removePriceLine(this.lastLabel); this.lastLabel = null; }
+      return;
+    }
+    const c = css(lb.close > lb.open ? '--up' : lb.close < lb.open ? '--down' : '--flat');
+    const o = { price: lb.close, color: c, axisLabelColor: c, lineVisible: !tosLook(), lineStyle: LightweightCharts.LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true };
+    if (this.lastLabel) this.lastLabel.applyOptions(o); else this.lastLabel = this.candles.createPriceLine(o);
+  }
+  // Candles that close where they opened take the flat color, if it differs from the up color.
+  candleData(list) {
+    const flat = css('--flat');
+    if (flat === css('--up')) return list;
+    return list.map(b => b.close === b.open ? { ...b, color: flat, borderColor: flat, wickColor: flat } : b);
   }
   load(keepView) {
     const { sym } = this.cell, watch = this.kind === 'watch';
@@ -2159,7 +2200,7 @@ class Tile {
     msg.textContent = s.error || `Loading ${sym}…`;
     msg.classList.toggle('err', !!s.error);
     if (!ready(s)) {
-      if (this.chart) { this.list = []; this.candles.setData([]); this.volume.setData([]); this.vw.setData([]); this.$('.legend').innerHTML = ''; this.watermark(true); this.paintDrawings(); }
+      if (this.chart) { this.list = []; this.candles.setData([]); this.volume.setData([]); this.vw.setData([]); this.paintLastLabel(); this.$('.legend').innerHTML = ''; this.watermark(true); this.paintDrawings(); }
       else this.el.querySelectorAll('.tbl').forEach(x => { x.innerHTML = ''; });
       ['.last', '.c1', '.c2', '.bid', '.ask'].forEach(k => { this.$(k).textContent = k === '.last' ? '—' : ''; });
       return;
@@ -2179,7 +2220,8 @@ class Tile {
       this.candles.applyOptions({ priceFormat: fmt });
       this.vw.applyOptions({ priceFormat: fmt });
       this.list = list;
-      this.candles.setData(list);
+      this.candles.setData(this.candleData(list));
+      this.paintLastLabel();
       this.volume.setData(this.volData(list));
       this.vw.setData(this.showVwap ? vwap(list) : []);
       this.lastT = list.length ? list[list.length - 1].time : -Infinity;
@@ -2206,7 +2248,7 @@ class Tile {
       const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
       // The chart only takes a bar at or after its newest one; anything else means the history changed.
       if (lb && lb.time < this.lastT) return this.load(true);
-      if (lb) { this.candles.update(lb); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
+      if (lb) { this.candles.update(this.candleData([lb])[0]); this.paintLastLabel(); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
       if (this.autoFit && list.length !== this.fitN) this.refit();
       this.alignScales();
       const lg = this.$('.legend');
@@ -2236,6 +2278,8 @@ class Tile {
     this.candles.applyOptions(candleColors());
     this.vw.applyOptions({ color: css('--vwap') });
     this.shade.redraw();
+    if (this.list) this.candles.setData(this.candleData(this.list));
+    this.paintLastLabel();
     this.volume.setData(this.volData(bars(this.cell.sym, this.cell.tf)));
     this.syncLines();
     this.watermark(true);
@@ -3248,10 +3292,11 @@ paintBell();
 const COLOR_KEY = 'multichart-colors-v1';
 const COLOR_GROUPS = [
   ['Workspace', [['bg', 'App background'], ['head', 'Panel headers'], ['line', 'Borders'], ['fg', 'Text'], ['muted', 'Secondary text'], ['accent', 'Buttons and highlights'], ['pop', 'Menus']]],
-  ['Charts', [['chart-bg', 'Chart background'], ['grid', 'Grid lines'], ['up', 'Up candles and volume'], ['down', 'Down candles and volume'], ['vwap', 'VWAP line'], ['ext', 'Pre-market and after-hours'], ['draw', 'Drawings'], ['alert', 'Alert lines']]],
+  ['Charts', [['chart-bg', 'Chart background'], ['grid', 'Grid lines'], ['up', 'Up candles and volume'], ['down', 'Down candles and volume'], ['flat', 'Flat candles (close = open)'], ['vwap', 'VWAP line'], ['ext', 'Pre-market and after-hours'], ['draw', 'Drawings'], ['alert', 'Alert lines']]],
   ['Level II', [['l2-1', 'Level 1 (best bid and ask)'], ['l2-2', 'Level 2'], ['l2-3', 'Level 3'], ['l2-4', 'Level 4'], ['l2-5', 'Level 5'], ['l2-6', 'Level 6 and deeper'], ['l2-text', 'Level text'], ['panel', 'Level II and T&S background']]],
   ['Time & Sales', [['ts-buy', 'Buys (at the ask)'], ['ts-sell', 'Sells (at the bid)'], ['ts-mid', 'Between bid and ask']]]
 ];
+const TOS_CANDLES = { up: '#00c531', down: '#ff5f5f', flat: '#e5e5e5', hollow: true };
 const THEMES = {
   'Dark': {},
   'DAS classic': {
@@ -3263,8 +3308,18 @@ const THEMES = {
     bg: '#e9edf1', panel: '#ffffff', 'chart-bg': '#ffffff', head: '#f4f6f8', line: '#cfd6de', grid: '#eef1f5', fg: '#131b24',
     muted: '#5b6878', accent: '#2457d6', up: '#0f8a62', down: '#d1433a', vwap: '#c026d3', ext: '#5b6878', pop: '#ffffff', 'l2-6': '#c9d1da',
     'ts-buy': '#0f8a62', 'ts-sell': '#d1433a', 'ts-mid': '#131b24'
+  },
+  // Only the candles, as thinkorswim draws them: hollow green up, solid salmon down, white when flat.
+  'TOS Theme Candles': TOS_CANDLES,
+  // As much of the thinkorswim chart as the app can match. It also turns on the separate volume chart.
+  'TOS Theme Full': {
+    ...TOS_CANDLES, tos: true,
+    bg: '#000000', head: '#000000', panel: '#0a0a0a', 'chart-bg': '#0a0a0a', line: '#3a3a3a', grid: '#2e2e2e', fg: '#e5e5e5', muted: '#a6a6a6', pop: '#191919',
+    vwap: '#ff66ff', ext: '#ffffff', extAlpha: 16, 'ts-buy': '#00c531', 'ts-sell': '#ff5f5f', 'ts-mid': '#e5e5e5'
   }
 };
+// Picking these changes only the candles and keeps the rest of your colors.
+const CANDLES_ONLY = new Set(['TOS Theme Candles']);
 const DEFAULT_COLORS = {};
 COLOR_GROUPS.forEach(([, list]) => list.forEach(([k]) => { DEFAULT_COLORS[k] = css('--' + k); }));
 let colors = {};
@@ -3285,6 +3340,7 @@ function applyColors() {
     if (colors[k]) root.style.setProperty('--' + k, colors[k]); else root.style.removeProperty('--' + k);
   });
   root.style.colorScheme = isLight(css('--bg')) ? 'light' : 'dark';
+  root.classList.toggle('tos', tosLook());
   paintShade();
   tiles.forEach(t => t.retheme());
   try { localStorage.setItem(COLOR_KEY, JSON.stringify(colors)); } catch (e) {}
@@ -3300,7 +3356,8 @@ function openColors() {
     <h4>Start from a theme</h4>
     <div class="themes">${Object.keys(THEMES).map(n => `<button data-theme-name="${n}">${n}</button>`).join('')}</div>
     ${COLOR_GROUPS.map(([group, list]) => `<h4>${group}</h4>` + list.map(([k, label]) =>
-      `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || DEFAULT_COLORS[k]}"></label>` +
+      `<label class="crow"><span>${label}</span><input type="color" id="c-${k}" data-k="${k}" value="${colors[k] || css('--' + k)}"></label>` +
+      (k === 'flat' ? `<label class="crow"><span>Hollow up candles</span><input type="checkbox" id="hollow" ${colors.hollow ? 'checked' : ''}></label>` : '') +
       (k === 'ext' ? `<label class="crow"><span>Shading opacity <b id="extPct">${shadePct()}%</b></span><input type="range" id="extAlpha" min="0" max="50" step="1" value="${shadePct()}"></label>` : '')).join('')).join('')}
     <button class="btn reset" id="resetColors">Reset to default colors</button></div>`;
   sheet.hidden = false;
@@ -3312,7 +3369,14 @@ function openColors() {
     paintShade();
     try { localStorage.setItem(COLOR_KEY, JSON.stringify(colors)); } catch (err) {}
   });
-  sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => { colors = { ...THEMES[b.dataset.themeName], extAlpha: colors.extAlpha }; applyColors(); openColors(); });
+  sheet.querySelector('#hollow').onchange = e => { if (e.target.checked) colors.hollow = true; else delete colors.hollow; applyColors(); };
+  sheet.querySelectorAll('[data-theme-name]').forEach(b => b.onclick = () => {
+    const name = b.dataset.themeName, th = THEMES[name];
+    colors = CANDLES_ONLY.has(name) ? { ...colors, ...th } : { ...th, extAlpha: th.extAlpha ?? colors.extAlpha };
+    applyColors();
+    if (th.tos && !volSep) setVolSep(true);
+    openColors();
+  });
   sheet.querySelector('#resetColors').onclick = () => { colors = {}; applyColors(); openColors(); };
 }
 

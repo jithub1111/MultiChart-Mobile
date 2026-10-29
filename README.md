@@ -15,6 +15,8 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 - Link groups (1–5) keep panels on the same symbol, like thinkorswim's colored link numbers
 - **Full** / **Charts only** switch hides everything except the charts
 - **Colors** panel: change every color (backgrounds, borders, headers, candles, VWAP, each Level II price level, Time & Sales), or start from the Dark, DAS classic or Light theme
+- **TOS Theme Candles** (in Colors, next to Light) switches just the candles to thinkorswim's: hollow green up candles, solid salmon down candles, and white candles that close where they opened. The rest of your colors stay. **Hollow up candles** and **Flat candles** can also be set on their own in the Charts section
+- **TOS Theme Full** makes the whole chart look like thinkorswim: those candles, near-black panels, dotted grid, dashed lines between days, plain sans-serif labels, solid volume bars in their own strip (it turns on **Separate volume chart**), magenta VWAP, gray pre-market and after-hours shading, and green bid / red ask in the panel headers
 - DAS-style Level II: each price level has its own background color on both the bid and ask side. **Level II options** in the panel menu switches between the **Colored** (DAS) and **Basic** (plain, like thinkorswim) styles, and shows or hides the MMID, Size and **Cumulative size** (the running total of shares from the best price) columns, and **Group by price** puts all the orders at one price on a single row
 - **Text size** in the menu of each Level II, Time & Sales and Level II + T&S panel, from 70% to 200%
 - **Workspace tabs**: Tab 1, Tab 2 and so on, each with its own layout. Tap the open tab to rename, duplicate or close it
