@@ -2408,10 +2408,26 @@ const DEFAULT_CHARTS = [
 const PRESETS = [
   ['c'], ['cc'], ['c', 'c'], ['c', 'cc'], ['cc', 'cc'], ['cc', 'cc', 'cc'],
   ['cc', 'cc', 'cc', 'cc'], ['cccc', 'cccc'],  // 8 charts: 2 across for portrait, 4 across for landscape
+  ['ccccc', 'ccccc', 'ccccc', 'ccccc'],  // 20 charts, 5 across
   ['c', 'lt'], ['c', 'c', 'lt'], ['cc', 'll', 'tt'], ['cc', 'cc', 'll', 'tt'],
   ['c', 'b'], ['c', 'c', 'b'], ['cc', 'bb']  // b = Level II + T&S in one box
 ];
 const CODE = { c: 'chart', l: 'l2', t: 'ts', b: 'lts' };
+// Ready-made layouts with their tickers filled in: rows of [symbol, timeframe, days (intraday) or range (daily)].
+const READY = [{
+  name: '20 charts (my thinkorswim grid)',
+  rows: [
+    [['AGQ', '1m', 10], ['ETHA', 'D', '1Y'], ['SLV', '5m', 2], ['SPY', '2m', 2], ['IBIT', '30m', 10]],
+    [['NFLX', '1m', 10], ['GLD', '1m', 2], ['SNDK', 'D', '2Y'], ['MSFT', 'D', '2Y'], ['DELL', '5m', 3]],
+    [['TSLA', '2m', 2], ['CRCL', 'D', '1Y'], ['MSTR', 'D', '2Y'], ['CHPY', 'D', '2Y'], ['HPE', '2m', 2]],
+    [['NVDA', '15m', 5], ['MU', 'D', '2Y'], ['AAPL', '2m', 1], ['INTC', '5m', 2], ['MRNA', 'D', '2Y']]
+  ]
+}];
+// Every chart gets the same share of the screen.
+function fromReady(r) {
+  return { dir: 'v', size: 1, children: r.rows.map(row => ({ dir: 'h', size: 1, children: row.map(([sym, tf, span]) =>
+    newCell('chart', { sym, tf, ...(TF[tf] === 'D' || TF[tf] === 'W' ? { range: span } : { days: span }) })) })) };
+}
 let nextId = 1;
 let tabs = [], activeTab = 0;  // workspace tabs, filled in below
 const newCell = (kind, extra) => ({ id: pid(), kind, size: 1, sym: 'SPY', tf: '5m', vwap: true, link: 0, ...extra });
@@ -2851,10 +2867,13 @@ function layoutPop(anchor) {
     <h4>Layout</h4>
     <div class="presets">${PRESETS.map((shape, i) => `<button class="preset" data-i="${i}" aria-label="Layout ${i + 1}">${shape.map(code => `<div style="flex:${code.includes('c') ? 2 : 1}">${[...code].map(ch => `<span class="${cls[ch]}"></span>`).join('')}</div>`).join('')}</button>`).join('')}</div>
     <p class="note">Grey is a chart, yellow is Level II, dark grey is Time & Sales, and half and half is both in one box.</p>
+    <h4>Ready-made</h4>
+    <div class="saved">${READY.map((r, i) => `<div class="srow"><button data-ready="${i}">${esc(r.name)}</button></div>`).join('')}</div>
     <h4>My layouts</h4>
     ${savedLayouts.length ? `<div class="saved">${savedLayouts.map((l, i) => `<div class="srow"><button data-load="${i}">${esc(l.name)}</button><button data-del="${i}" aria-label="Delete ${esc(l.name)}">✕</button></div>`).join('')}</div>` : '<p class="empty">No saved layouts yet.</p>'}
     <form class="symform" id="saveLayout"><input id="layoutName" maxlength="40" placeholder="Name this layout" aria-label="Layout name" style="text-transform:none;font-family:var(--ui);font-weight:500"><button class="btn primary" type="submit">Save</button></form>`, p => {
     p.querySelectorAll('[data-load]').forEach(b => b.onclick = () => { loadLayout(savedLayouts[+b.dataset.load]); closePop(); });
+    p.querySelectorAll('[data-ready]').forEach(b => b.onclick = () => { maxed = null; state.root = fromReady(READY[+b.dataset.ready]); render(); closePop(); });
     p.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { savedLayouts.splice(+b.dataset.del, 1); persistSaved(); layoutPop(anchor); });
     p.querySelector('#saveLayout').onsubmit = e => {
       e.preventDefault();
