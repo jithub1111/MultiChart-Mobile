@@ -143,6 +143,20 @@ html.nobar .showbar { display: inline-flex; }
 .edit .acts button { border: 1px solid var(--line); background: var(--head); border-radius: 6px; padding: 5px 9px; font-size: 12px; font-weight: 600; }
 .edit .acts .danger { color: var(--down); }
 .edit .acts button:disabled { opacity: .4; cursor: default; }
+.edit .pick { position: absolute; top: 6px; left: 6px; z-index: 2; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--head); border: 1px solid var(--line); cursor: pointer; }
+.edit .pick input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.tile.picked .edit { background: color-mix(in srgb, var(--accent) 22%, rgba(5, 8, 12, .78)); border-style: solid; }
+/* edit-mode toolbar: make the ticked panels even, and lines that move together */
+/* it takes its own strip under the panels, so it never covers their + buttons */
+.editbar { flex: none; align-self: center; margin-top: 6px; zoom: var(--scale); max-width: 100%; overflow-x: auto;
+  display: none; align-items: center; gap: 8px; padding: 5px 8px 5px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--head); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.grid.editing ~ .editbar { display: flex; }
+.editbar .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.editbar button { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 5px 10px; font-weight: 600; font-size: 12px; }
+.editbar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.editbar button:disabled { opacity: .4; cursor: default; }
+.editbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding-left: 8px; border-left: 1px solid var(--line); }
+.editbar input { accent-color: var(--accent); margin: 0; }
 .side-add {
   position: absolute; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
   display: grid; place-items: center; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); padding: 0;
@@ -554,6 +568,13 @@ html.nobar .showbar { display: inline-flex; }
   <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4l3.5 3.5L9.5 4"/></svg>
 </button>
 <main class="grid" id="grid"></main>
+<div class="editbar" id="editBar" role="toolbar" aria-label="Layout tools">
+  <span class="n" id="pickN">Tick panels to size them</span>
+  <button class="primary" id="evenBtn" disabled>Make even</button>
+  <button id="pickAll">Select all</button>
+  <button id="pickNone" disabled>Clear</button>
+  <label title="Dividers that line up move together, so columns and rows stay lined up"><input type="checkbox" id="linkLines">Link lines</label>
+</div>
 <div class="pop" id="pop" hidden></div>
 <aside class="sheet" id="sheet" hidden aria-label="Colors"></aside>
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -1824,6 +1845,7 @@ class Tile {
       </div>
       <div class="body"></div>
       <div class="edit">
+        <label class="pick" title="Select, then Make even"><input type="checkbox" aria-label="Select this panel"></label>
         ${['top', 'right', 'bottom', 'left'].map(sd => `<button class="side-add" data-side="${sd}" aria-label="Add panel ${sd === 'top' ? 'above' : sd === 'bottom' ? 'below' : 'to the ' + sd}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v10M3 8h10"/></svg></button>`).join('')}
         <div class="mid"><div class="what"></div><div class="acts"><button data-a="type">Change type</button><button data-a="del" class="danger">Remove</button></div></div>
       </div>`;
@@ -1831,6 +1853,7 @@ class Tile {
     el.querySelectorAll('.side-add').forEach(b => b.addEventListener('click', () => addPop(b, this, b.dataset.side)));
     this.$('.edit [data-a=type]').addEventListener('click', e => typePop(e.currentTarget, this));
     this.$('.edit [data-a=del]').addEventListener('click', () => removePanel(this.cell.id));
+    this.$('.pick input').addEventListener('change', e => { if (e.target.checked) picked.add(this.cell.id); else picked.delete(this.cell.id); paintEditBar(); });
     this.$('.sym').addEventListener('click', e => (watch ? listPop : symbolPop)(e.currentTarget, this));
     this.$('.link').addEventListener('click', e => linkPop(e.currentTarget, this));
     this.$('.more').addEventListener('click', e => tileMenu(e.currentTarget, this));
@@ -2436,6 +2459,8 @@ class Tile {
   paintEdit() {
     this.$('.edit .what').innerHTML = `${KINDS[this.cell.kind]}<small>${this.kind === 'watch' ? esc(listFor(this.cell).name) : this.cell.sym + (this.kind === 'chart' ? ' · ' + this.cell.tf : '')}</small>`;
     this.$('.edit [data-a=del]').disabled = allCells().length < 2;
+    this.$('.pick input').checked = picked.has(this.cell.id);
+    this.el.classList.toggle('picked', picked.has(this.cell.id));
   }
   destroy() { if (this.chart) this.chart.remove(); if (this.vchart) this.vchart.remove(); }
 }
@@ -2465,6 +2490,13 @@ const READY = [{
     [['NFLX', '1m', 10], ['GLD', '1m', 2], ['SNDK', 'D', '2Y'], ['MSFT', 'D', '2Y'], ['DELL', '5m', 3]],
     [['TSLA', '2m', 2], ['CRCL', 'D', '1Y'], ['MSTR', 'D', '2Y'], ['CHPY', 'D', '2Y'], ['HPE', '2m', 2]],
     [['NVDA', '15m', 5], ['MU', 'D', '2Y'], ['AAPL', '2m', 1], ['INTC', '5m', 2], ['MRNA', 'D', '2Y']]
+  ]
+}, {
+  name: '12 charts (my thinkorswim grid)',
+  rows: [
+    [['SPY', '5m', 3], ['QQQ', '2m', 2], ['IBIT', '5m', 3], ['MARA', '1m', 10]],
+    [['QSI', '5m', 3], ['SAIQ', '15m', 10], ['AIOK', '1m', 10], ['NUAI', '1m', 10]],
+    [['USO', '5m', 2], ['CHSN', '1m', 10], ['PSRHF', '1m', 5], ['TPET', '2m', 5]]
   ]
 }];
 // Every chart gets the same share of the screen.
@@ -2641,6 +2673,8 @@ function render() {
   for (const [id, t] of tiles) if (!live.has(id)) { t.destroy(); tiles.delete(id); }
   tiles.forEach(t => { t.paintEdit(); t.paintLink(); });  // adding a panel can give its neighbour a link group
   grid.classList.toggle('editing', editing);
+  if (!editing) picked.clear();
+  paintEditBar();
   const eb = document.getElementById('editBtn');
   eb.setAttribute('aria-pressed', String(editing));
   eb.querySelector('.lbl').textContent = editing ? 'Done' : 'Layout';
@@ -2651,34 +2685,79 @@ function render() {
 }
 
 // Drag a splitter: sizes are relative weights, so hidden panels keep their share.
+// With Link lines on, the other dividers that line up with it (say, the same column line in every row) move too.
+const LINES_KEY = 'multichart-linklines-v1';
+let linkLines = false;
+try { linkLines = localStorage.getItem(LINES_KEY) === '1'; } catch (e) {}
 function splitter(kind, items, i) {
   const s = document.createElement('div');
   s.className = 'split ' + kind;
   s.setAttribute('role', 'separator');
   s.setAttribute('aria-orientation', kind === 'h' ? 'horizontal' : 'vertical');
-  s.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    s.setPointerCapture(e.pointerId);
-    s.classList.add('drag');
-    const vertical = kind === 'h';
+  const vertical = kind === 'h', min = vertical ? 70 : 110;
+  const mid = el => { const r = el.getBoundingClientRect(); return vertical ? r.top + r.height / 2 : r.left + r.width / 2; };
+  // Ready one divider to move: its two neighbours' sizes, and how far it can go.
+  s.prep = () => {
     const els = [...s.parentElement.children].filter(c => !c.classList.contains('split'));
     const px = els.map(el => { const r = el.getBoundingClientRect(); return vertical ? r.height : r.width; });
     const k = items.reduce((a, it) => a + it.size, 0) / px.reduce((a, b) => a + b, 0);
     items.forEach((it, j) => { it.size = px[j] * k; });
-    const a = px[i], b = px[i + 1], start = vertical ? e.clientY : e.clientX, min = vertical ? 70 : 110;
-    const move = ev => {
-      let d = (vertical ? ev.clientY : ev.clientX) - start;
-      d = Math.max(min - a, Math.min(b - min, d));
+    const a = px[i], b = px[i + 1];
+    return { lo: min - a, hi: b - min, set: d => {
       items[i].size = (a + d) * k; items[i + 1].size = (b - d) * k;
       els[i].style.flex = `${items[i].size} 1 0`; els[i + 1].style.flex = `${items[i + 1].size} 1 0`;
+    } };
+  };
+  s.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    s.setPointerCapture(e.pointerId);
+    const at = mid(s);
+    const group = [s, ...(linkLines ? [...grid.querySelectorAll('.split.' + kind)].filter(o => o !== s && Math.abs(mid(o) - at) < 6) : [])];
+    group.forEach(o => o.classList.add('drag'));
+    const moves = group.map(o => o.prep());
+    const lo = Math.max(...moves.map(m => m.lo)), hi = Math.min(...moves.map(m => m.hi));
+    const start = vertical ? e.clientY : e.clientX;
+    const move = ev => {
+      const d = Math.max(lo, Math.min(hi, (vertical ? ev.clientY : ev.clientX) - start));
+      moves.forEach(m => m.set(d));
     };
-    const up = () => { s.classList.remove('drag'); s.removeEventListener('pointermove', move); s.removeEventListener('pointerup', up); s.removeEventListener('pointercancel', up); save(); };
+    const up = () => { group.forEach(o => o.classList.remove('drag')); s.removeEventListener('pointermove', move); s.removeEventListener('pointerup', up); s.removeEventListener('pointercancel', up); save(); };
     s.addEventListener('pointermove', move);
     s.addEventListener('pointerup', up);
     s.addEventListener('pointercancel', up);
   });
   return s;
 }
+
+// Make the ticked panels the same size. Each split shares out the room its ticked parts already
+// have, by how many ticked panels sit side by side (or stacked) in each, so untouched parts keep theirs.
+const picked = new Set();
+function makeEven() {
+  const span = (n, d) => isLeaf(n) ? (picked.has(n.id) ? 1 : 0) : n.children.reduce((a, c) => n.dir === d ? a + span(c, d) : Math.max(a, span(c, d)), 0);
+  const even = n => {
+    if (isLeaf(n)) return;
+    const kids = n.children.map(c => [c, span(c, n.dir)]).filter(([, k]) => k > 0);
+    const room = kids.reduce((a, [c]) => a + c.size, 0), all = kids.reduce((a, [, k]) => a + k, 0);
+    if (kids.length > 1) kids.forEach(([c, k]) => { c.size = room * k / all; });
+    n.children.forEach(even);
+  };
+  maxed = null;
+  even(state.root);
+  render();
+}
+function paintEditBar() {
+  [...picked].forEach(id => { if (!allCells().some(c => c.id === id)) picked.delete(id); });
+  const n = picked.size;
+  document.getElementById('pickN').textContent = n ? n + ' selected' : 'Tick panels to size them';
+  document.getElementById('evenBtn').disabled = n < 2;
+  document.getElementById('pickNone').disabled = !n;
+  document.getElementById('linkLines').checked = linkLines;
+  tiles.forEach(t => { t.$('.pick input').checked = picked.has(t.cell.id); t.el.classList.toggle('picked', picked.has(t.cell.id)); });
+}
+document.getElementById('evenBtn').addEventListener('click', makeEven);
+document.getElementById('pickAll').addEventListener('click', () => { leaves().filter(visible).forEach(c => picked.add(c.id)); paintEditBar(); });
+document.getElementById('pickNone').addEventListener('click', () => { picked.clear(); paintEditBar(); });
+document.getElementById('linkLines').addEventListener('change', e => { linkLines = e.target.checked; try { localStorage.setItem(LINES_KEY, linkLines ? '1' : '0'); } catch (err) {} });
 
 function toggleMax(t) { maxed = maxed === t.cell.id ? null : t.cell.id; render(); }
 function setSymbol(t, sym) {
