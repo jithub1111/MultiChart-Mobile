@@ -619,7 +619,7 @@ html.nobar .showbar { display: inline-flex; }
 const TF = { '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '1h': 60, 'D': 'D', 'W': 'W' };
 // How much an intraday chart opens on (sessions), and how far back a daily or weekly chart opens (months, or the year so far).
 const DAYS = [1, 2, 3, 5, 10];
-const RANGES = { '1M': 1, '3M': 3, '6M': 6, 'YTD': 'ytd', '1Y': 12, '2Y': 24, '5Y': 60 }, RANGE_DEFAULT = { D: '6M', W: '2Y' };
+const RANGES = { '1M': 1, '3M': 3, '6M': 6, 'YTD': 'ytd', '1Y': 12, '2Y': 24, '5Y': 60, '10Y': 120, '20Y': 240 }, RANGE_DEFAULT = { D: '6M', W: '2Y' };
 const OPEN = 9 * 3600 + 30 * 60;           // 9:30 ET, stored as wall-clock seconds
 const SESSION = 390;                        // minutes per regular session
 const CLOSE = 16 * 3600;                    // 4:00 PM ET
@@ -955,7 +955,7 @@ function settle(s, m1, daily, emptyMsg) {
 }
 async function loadAlpaca(s) {
   const sym = s.sym, now = Date.now();
-  const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 6 * 365 * 864e5)]);
+  const [m1, daily] = await Promise.all([history(s, '1Min', now - 15 * 864e5), history(s, '1Day', now - 21 * 365 * 864e5)]);
   settle(s, m1, daily, `No data for ${sym}. The free feed covers US-listed stocks and ETFs, not OTC.`);
   try {
     const snap = await api(`/v2/stocks/${encodeURIComponent(sym)}/snapshot`, { feed: 'iex' });
@@ -1155,10 +1155,11 @@ async function loadSchwab(s) {
   // Without an explicit end date Schwab stops at the previous trading day, leaving out today.
   const q = `/pricehistory?symbol=${encodeURIComponent(s.sym)}&endDate=${Date.now() + 60e3}&`;
   const minutes = days => helper(q + `periodType=day&frequencyType=minute&frequency=1&needExtendedHoursData=true&startDate=${Date.now() - days * 864e5}`);
+  const years = n => helper(q + `periodType=year&frequencyType=daily&frequency=1&startDate=${Date.now() - n * 365 * 864e5}`);
   // 16 calendar days of minute bars covers a 10-day chart; if Schwab won't reach that far, take 10.
   const [m, d] = await Promise.all([
     minutes(16).catch(() => minutes(10)),
-    helper(q + `periodType=year&frequencyType=daily&frequency=1&startDate=${Date.now() - 6 * 365 * 864e5}`)
+    years(21).catch(() => years(6))  // 20 years of daily bars (a little over, for the 20Y view); 6 if Schwab won't go that far
   ]);
   settle(s, candles(m), candles(d, true), `No data for ${s.sym}. Check the symbol.`);
   try {
@@ -3118,7 +3119,7 @@ const GUIDE = [
     ['SPY ▾', 'The ticker. Tap it to type a new one or pick a recent one.'],
     ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all.'],
     ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
-    ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 5Y for daily and weekly.'],
+    ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 20Y for daily and weekly.'],
     ['5m', 'The timeframe: 1m, 2m, 5m, 15m, 30m, 1h, daily or weekly.'],
     ['Line', 'Drawing tools: a price level or a trendline. Drawings follow the ticker onto every chart of it.'],
     ['⋮', 'The panel menu: VWAP on or off, add to watchlist, full screen, float this panel, remove.']
@@ -3147,7 +3148,7 @@ const GUIDE = [
   ] },
   { t: 'Tabs, windows and the desktop app', p: 'Ways to spread out:', d: [
     ['Tabs', 'Make one tab per setup: say, a big grid on Tab 2 and a few charts with Level II on Tab 3.'],
-    ['Pop out', 'On a computer, the tab menu\'s <b>Pop out to a new window</b> moves a tab into its own window to drag onto another monitor. All windows share one Schwab connection.'],
+    ['Pop out', 'On a computer, the tab menu\'s <b>Pop out to a new window</b> moves a tab into its own window to drag onto another monitor. All windows share one Schwab connection. Closing the main window closes them too, and they reopen in the same spots next time.'],
     ['Install', '<b>Chart settings → Install desktop app</b> gives Multichart its own window and icon (Chrome or Edge).'],
     ['Float', '<b>Picture-in-picture</b> keeps Multichart on top of other apps. Each panel\'s menu can float just that panel.'],
     ['iPhone', 'In Safari, Share → <b>Add to Home Screen</b> opens it full screen like an app.']
