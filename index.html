@@ -4124,15 +4124,19 @@ function watchTab(id) {
     wantBack.delete(id);
   });
 }
-function popOut(i) {
+function popOut(i, restoring) {
   const t = tabs[i], w = Math.round(Math.min(screen.availWidth, outerWidth) * 0.8), h = Math.round(Math.min(screen.availHeight, outerHeight) * 0.8);
+  // With more than one monitor, ask once to place windows on any of them, so they come back where they were.
+  if (!restoring && screen.isExtended && window.getScreenDetails) getScreenDetails().catch(() => {});
   save();
-  const win = open(location.pathname + '?win=' + encodeURIComponent(t.id), 'multichart-' + t.id, `popup,width=${w},height=${h},left=${screenX + 60},top=${screenY + 60}`);
-  if (!win) return toast('The browser blocked the new window. Allow pop-ups for this site, then try again.');
+  const at = t.win ? `width=${t.win.w},height=${t.win.h},left=${t.win.x},top=${t.win.y}` : `width=${w},height=${h},left=${screenX + 60},top=${screenY + 60}`;
+  const win = open(location.pathname + '?win=' + encodeURIComponent(t.id), 'multichart-' + t.id, 'popup,' + at);
+  if (!win) return restoring ? false : toast('The browser blocked the new window. Allow pop-ups for this site, then try again.');
   popWins[t.id] = win; outTabs.add(t.id);
   // If the window never opens properly, the tab comes back here.
   setTimeout(() => { if (outTabs.has(t.id) && !watching.has(t.id)) { outTabs.delete(t.id); renderTabs(); } }, 15000);
   if (i === activeTab) leaveTab(); else renderTabs();
+  return true;
 }
 if (popTab) {
   document.title = state.name + ' · Multichart';
@@ -4144,6 +4148,38 @@ if (popTab) {
   });
   if (!owns(state.id)) leaveTab(); else renderTabs();
 }).catch(() => {});
+
+// Closing the main window closes the popped-out ones too, and opening it again brings them back
+// where they were, on whichever monitor. Each popped-out window keeps its spot on its tab (tab.win).
+const POPPED_KEY = 'multichart-popped-v1';
+if (popTab && canPopOut) {
+  let lastPos = '';
+  const notePos = () => {
+    const t = tabs.find(x => x.id === popTab);
+    const pos = { x: screenX, y: screenY, w: outerWidth, h: outerHeight }, k = JSON.stringify(pos);
+    if (!t || k === lastPos) return;
+    lastPos = k; t.win = pos; save();
+  };
+  // A browser that can't place a window on another monitor puts it on this one; move it there now.
+  const t = tabs.find(x => x.id === popTab);
+  if (t && t.win && (screenX !== t.win.x || screenY !== t.win.y)) try { moveTo(t.win.x, t.win.y); resizeTo(t.win.w, t.win.h); } catch (e) {}
+  setTimeout(() => { notePos(); setInterval(notePos, 2000); addEventListener('resize', notePos); addEventListener('pagehide', notePos); }, 1500);
+} else if (canPopOut) {
+  addEventListener('pagehide', () => {
+    const ids = [...outTabs].filter(id => tabs.some(t => t.id === id));
+    try { if (ids.length) localStorage.setItem(POPPED_KEY, JSON.stringify(ids)); } catch (e) {}
+    ids.forEach(id => { const w = popWins[id]; if (w && !w.closed) w.close(); post({ t: 'close-tab', id }); });
+  });
+  let popped = [];
+  try { popped = JSON.parse(localStorage.getItem(POPPED_KEY)) || []; } catch (e) {}
+  // Wait for the windows that just closed to let go of their tabs first.
+  if (popped.length) setTimeout(async () => {
+    try { if ((await navigator.permissions.query({ name: 'window-management' })).state === 'granted') await getScreenDetails(); } catch (e) {}
+    const left = popped.filter(id => tabs.some(t => t.id === id) && !outTabs.has(id) && !popOut(tabs.findIndex(t => t.id === id), true));
+    try { if (left.length) localStorage.setItem(POPPED_KEY, JSON.stringify(left)); else localStorage.removeItem(POPPED_KEY); } catch (e) {}
+    if (left.length) toast(`The browser blocked ${left.length === 1 ? 'a popped-out tab' : left.length + ' popped-out tabs'} from reopening. Click the blocked pop-up icon in the address bar, choose <b>Always allow</b>, then reload.`, true);
+  }, 1200);
+}
 
 // What one window saves, the others pick up.
 addEventListener('storage', e => {
