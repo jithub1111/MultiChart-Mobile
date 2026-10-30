@@ -2040,7 +2040,7 @@ class Tile {
       body.addEventListener('wheel', () => { this.autoFit = false; }, { capture: true, passive: true });
       // The plot area changes width when the panel resizes or the price labels grow or shrink.
       // Refit on the next frame: the chart reports the new size before it has finished applying it.
-      (this.vchart || this.chart).timeScale().subscribeSizeChange(() => requestAnimationFrame(() => { if (this.autoFit && this.list) this.refit(); }));
+      (this.vchart || this.chart).timeScale().subscribeSizeChange(() => requestAnimationFrame(() => { this.roomTop(); if (this.autoFit && this.list) this.refit(); }));
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
@@ -2231,7 +2231,7 @@ class Tile {
     const hl = zoomMode === 'highlight';
     this.el.classList.toggle('hlzoom', hl);
     [this.chart, this.vchart].forEach(c => c && c.applyOptions({ handleScroll: { pressedMouseMove: !hl, horzTouchDrag: !hl, vertTouchDrag: !hl } }));
-    if (!hl) this.$('.zoomreset').hidden = true;
+    if (!hl) { this.$('.zoomreset').hidden = true; this.roomTop(); }
   }
   // Width of the plot area (the price chart hides its time axis when volume has its own strip).
   plotWidth() { return (this.vchart || this.chart).timeScale().width(); }
@@ -2249,6 +2249,14 @@ class Tile {
     b.textContent = !this.intraday ? `Back to ${this.range}` : this.cell.days > 1 ? `All ${this.cell.days} days` : 'Whole day';
     b.style.right = (this.chart.priceScale('right').width() + 6) + 'px';
     b.hidden = false;
+    this.roomTop();
+  }
+  // While the button shows, the price scale leaves room above the candles so the newest ones aren't hidden behind it.
+  roomTop() {
+    if (!this.chart) return;
+    const b = this.$('.zoomreset'), h = (this.$('.cmain') || this.$('.body')).clientHeight;
+    const top = b.hidden || !h ? 0.06 : Math.min(0.3, Math.max(0.06, (b.offsetTop + b.offsetHeight + 8) / h));
+    if (top !== this.topMargin) { this.topMargin = top; this.chart.priceScale('right').applyOptions({ scaleMargins: { top, bottom: this.vchart ? 0.06 : 0.24 } }); }
   }
   // Everything that's loaded, as far as the chart zooms out. The button on the chart goes back.
   zoomAll() {
@@ -2266,6 +2274,7 @@ class Tile {
   fitView() {
     this.autoFit = true;
     this.$('.zoomreset').hidden = true;
+    this.roomTop();
     this.refit();
     requestAnimationFrame(() => requestAnimationFrame(() => this.autoFit && this.refit()));
   }
