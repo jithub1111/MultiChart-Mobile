@@ -4,8 +4,9 @@ A thinkorswim-style multi-chart workspace that runs in a phone or desktop browse
 
 ## What it does today
 
+- **Guide** (Chart settings → Guide): eight short pages on what each button does and how to use the app
 - **Layout** (pencil) button for edit mode: tap the + on any side of a panel to add a chart, Level II or Time & Sales there, or remove and change panels
-- In edit mode, a strip under the panels has **Make even**: tick the box in the corner of the panels you want (or Select all), and they become the same size while the others keep theirs. **Link lines** makes dividers that line up move together, so columns and rows stay lined up; leave it off to move one divider on its own
+- In edit mode, a strip under the panels has **Make even**: tick the box in the corner of the panels you want (or **Select all**, also next to Done), and they become the same size while the others keep theirs. **Link lines** makes dividers that line up move together, so columns and rows stay lined up; leave it off to move one divider on its own
 - **Ready-made** layouts (Chart settings → Layouts) fill in tickers too: a 20-chart and a 12-chart grid
 - Resize panels by dragging the bars between them
 - Panel types: **Chart**, **Level II**, **Time & Sales**, **Level II + T&S** (both side by side in one box), **Fundamentals** and **Watchlist**

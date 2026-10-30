@@ -157,6 +157,30 @@ html.nobar .showbar { display: inline-flex; }
 .editbar button:disabled { opacity: .4; cursor: default; }
 .editbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding-left: 8px; border-left: 1px solid var(--line); }
 .editbar input { accent-color: var(--accent); margin: 0; }
+/* the guide: a few pages on what each button does (Chart settings → Guide) */
+.guide { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .6); }
+.guide[hidden] { display: none; }
+.gbox { zoom: var(--scale); width: min(560px, 100%); max-height: min(640px, calc(100dvh / var(--scale) - 32px)); display: flex; flex-direction: column;
+  background: var(--head); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
+.ghead { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 0 20px; }
+.gstep { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.gx { border: 0; background: none; color: var(--muted); font-size: 16px; width: 32px; height: 32px; border-radius: 8px; }
+.gx:hover { background: var(--hover); color: var(--fg); }
+.gpage { overflow-y: auto; padding: 4px 20px 8px; }
+.gpage h2 { margin: 4px 0 6px; font-size: 20px; }
+.gpage > p { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.gpage dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 9px 12px; align-items: baseline; }
+.gpage dt { justify-self: start; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); white-space: nowrap; }
+.gpage dd { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.gpage dd b { color: var(--fg); font-weight: 600; }
+.gpage .tip { margin: 14px 0 4px; padding: 9px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--fg); }
+.gfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px 16px; border-top: 1px solid var(--line); }
+.gfoot .btn { min-width: 84px; justify-content: center; }
+.gfoot .btn:disabled { opacity: .35; cursor: default; }
+.gdots { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.gdots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--line); }
+.gdots button[aria-current="true"] { background: var(--accent); }
+@media (max-width: 480px) { .gpage dl { grid-template-columns: 1fr; gap: 3px; } .gpage dd { margin-bottom: 8px; } }
 .side-add {
   position: absolute; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
   display: grid; place-items: center; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); padding: 0;
@@ -547,6 +571,7 @@ html.nobar .showbar { display: inline-flex; }
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>
     <span class="lbl">Layout</span>
   </button>
+  <button class="btn" id="pickAllTop" hidden>Select all</button>
   <div class="spacer"></div>
   <div class="seg" role="group" aria-label="Workspace mode">
     <button id="modeAll" aria-pressed="true">Full</button>
@@ -578,6 +603,13 @@ html.nobar .showbar { display: inline-flex; }
 <div class="pop" id="pop" hidden></div>
 <aside class="sheet" id="sheet" hidden aria-label="Colors"></aside>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="guide" id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+  <div class="gbox">
+    <div class="ghead"><span class="gstep" id="guideStep"></span><button class="gx" id="guideX" aria-label="Close the guide">✕</button></div>
+    <div class="gpage" id="guidePage"></div>
+    <div class="gfoot"><button class="btn" id="guideBack">Back</button><span class="gdots" id="guideDots"></span><button class="btn primary" id="guideNext">Next</button></div>
+  </div>
+</div>
 <div class="pipcover" id="pipCover" hidden><div><p>Multichart is showing in picture-in-picture.</p><button class="btn primary" id="pipBack">Bring it back here</button></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -2752,11 +2784,20 @@ function paintEditBar() {
   document.getElementById('evenBtn').disabled = n < 2;
   document.getElementById('pickNone').disabled = !n;
   document.getElementById('linkLines').checked = linkLines;
+  // Next to Done: ticks every panel, or clears them once they all are.
+  const top = document.getElementById('pickAllTop'), every = leaves().filter(visible).every(c => picked.has(c.id));
+  if (top.hidden === editing) { top.hidden = !editing; placeTabs(); }
+  top.textContent = n && every ? 'Clear all' : 'Select all';
   tiles.forEach(t => { t.$('.pick input').checked = picked.has(t.cell.id); t.el.classList.toggle('picked', picked.has(t.cell.id)); });
 }
 document.getElementById('evenBtn').addEventListener('click', makeEven);
 document.getElementById('pickAll').addEventListener('click', () => { leaves().filter(visible).forEach(c => picked.add(c.id)); paintEditBar(); });
 document.getElementById('pickNone').addEventListener('click', () => { picked.clear(); paintEditBar(); });
+document.getElementById('pickAllTop').addEventListener('click', () => {
+  const vis = leaves().filter(visible);
+  if (picked.size && vis.every(c => picked.has(c.id))) picked.clear(); else vis.forEach(c => picked.add(c.id));
+  paintEditBar();
+});
 document.getElementById('linkLines').addEventListener('change', e => { linkLines = e.target.checked; try { localStorage.setItem(LINES_KEY, linkLines ? '1' : '0'); } catch (err) {} });
 
 function toggleMax(t) { maxed = maxed === t.cell.id ? null : t.cell.id; render(); }
@@ -3033,6 +3074,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
+      <button data-a="guide"><span>Guide <small>what each button does</small></span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
@@ -3048,12 +3090,100 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     };
     p.querySelector('[data-a=layout]').onclick = () => layoutPop(anchor);
     p.querySelector('[data-a=colors]').onclick = () => { closePop(); openColors(); };
+    p.querySelector('[data-a=guide]').onclick = () => { closePop(); openGuide(); };
     const pp = p.querySelector('[data-a=pip]');
     if (pp) pp.onclick = () => { closePop(); docPip ? floatApp() : floatVideo(null); };
     const ib = p.querySelector('[data-a=install]');
     if (ib) ib.onclick = () => { closePop(); installApp(); };
   });
 });
+/* ---------- guide ---------- */
+const GUIDE = [
+  { t: 'Welcome to Multichart', p: 'Multichart puts many live charts on one screen, like thinkorswim\'s flexible grid, with Level II, Time & Sales, a watchlist and news next to them. These pages go through each part. Everything you change is saved on this device.', d: [
+    ['Panels', 'Each box on the screen is a <b>panel</b>: a chart, Level II, Time & Sales, a watchlist or fundamentals.'],
+    ['Tabs', 'Each tab has its own layout of panels, so you can keep different setups side by side.'],
+    ['Live data', 'Prices come from your Schwab account through your helper. Without it, the app shows made-up demo prices.']
+  ], tip: 'Use the arrow keys or the buttons below to move between pages.' },
+  { t: 'The top bar', p: 'From left to right:', d: [
+    ['Live · Schwab', 'Shows whether live data is on. Green is live, blue is connecting, red is a problem. Tap it to open <b>Data source</b>, where the message explains what is wrong.'],
+    ['⌃', 'Hides the top bar and tabs for more room. The small arrow at the top middle brings them back.'],
+    ['Layout', 'Turns on Layout mode to add, remove and size panels. Tap <b>Done</b> when you finish.'],
+    ['Tab 1  +', 'Your tabs. Tap the open tab to rename, duplicate, pop out or close it. <b>+</b> makes a new tab.'],
+    ['Full / Charts only', '<b>Charts only</b> hides everything except the charts. <b>Full</b> shows every panel again.'],
+    ['Alerts', 'Your price alerts: see them, delete them, or clear the ones that already hit.'],
+    ['Chart settings', 'Zoom style, layouts, colors, picture-in-picture, this guide and more.'],
+    ['−  Auto  +', 'Makes the whole app smaller or bigger. Tap the middle to go back to <b>Auto</b>.']
+  ] },
+  { t: 'A chart panel', p: 'The header across the top of every chart:', d: [
+    ['SPY ▾', 'The ticker. Tap it to type a new one or pick a recent one.'],
+    ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all.'],
+    ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
+    ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 5Y for daily and weekly.'],
+    ['5m', 'The timeframe: 1m, 2m, 5m, 15m, 30m, 1h, daily or weekly.'],
+    ['Line', 'Drawing tools: a price level or a trendline. Drawings follow the ticker onto every chart of it.'],
+    ['⋮', 'The panel menu: VWAP on or off, add to watchlist, full screen, float this panel, remove.']
+  ] },
+  { t: 'Moving around a chart', p: 'The chart works with fingers, a mouse or a trackpad.', d: [
+    ['Drag', 'Scroll back in time (with pinch to zoom). The price and time scales can be dragged too.'],
+    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead.'],
+    ['Double-tap', 'Zooms all the way out over everything loaded, as in thinkorswim. The button on the chart goes back.'],
+    ['Crosshair', 'Follows your finger or mouse and shows the price and time under it, on the volume strip too.'],
+    ['Tap a price', 'Tap the price scale to set an alert there. When it hits, a pop-up shows and the app beeps.']
+  ] },
+  { t: 'Building a layout', p: 'Tap <b>Layout</b> in the top bar. Every panel gets edit buttons:', d: [
+    ['+', 'The blue + on each side adds a panel there: chart, Level II, Time & Sales, both, watchlist or fundamentals.'],
+    ['Change type', 'Turns this panel into a different kind.'],
+    ['Remove', 'Takes the panel away. Its neighbours fill the space.'],
+    ['Divider', 'Drag the bar between two panels to make one bigger. This works outside Layout mode too.'],
+    ['☑ Make even', 'Tick the box in the corner of the panels you want, then press <b>Make even</b> in the strip at the bottom. Unticked panels keep their size.'],
+    ['Link lines', 'When ticked, dividers that line up move together, so columns and rows stay straight.']
+  ], tip: '<b>Chart settings → Layouts</b> has ready-made grids (blank or with your tickers), and lets you save the current layout by name to load later.' },
+  { t: 'Level II, Time & Sales and more', p: 'The other kinds of panel:', d: [
+    ['Level II', 'The order book: bids on the left, asks on the right, each price level in its own color. Its menu has <b>Level II options</b> (Colored or Basic style, columns, group by price) and <b>Text size</b>.'],
+    ['Time & Sales', 'Each trade as it happens: green at the ask, red at the bid.'],
+    ['L2 + T&S', 'Both in one box, side by side.'],
+    ['Watchlist', 'Lists of tickers with live prices. Tap a ticker to open it on the linked charts, tap + to add, tap a heading to sort. The menu picks columns and edits the list.'],
+    ['Fundamentals', 'News, key statistics (float, short interest and more), the company profile and SEC filings.']
+  ] },
+  { t: 'Tabs, windows and the desktop app', p: 'Ways to spread out:', d: [
+    ['Tabs', 'Make one tab per setup: say, a big grid on Tab 2 and a few charts with Level II on Tab 3.'],
+    ['Pop out', 'On a computer, the tab menu\'s <b>Pop out to a new window</b> moves a tab into its own window to drag onto another monitor. All windows share one Schwab connection.'],
+    ['Install', '<b>Chart settings → Install desktop app</b> gives Multichart its own window and icon (Chrome or Edge).'],
+    ['Float', '<b>Picture-in-picture</b> keeps Multichart on top of other apps. Each panel\'s menu can float just that panel.'],
+    ['iPhone', 'In Safari, Share → <b>Add to Home Screen</b> opens it full screen like an app.']
+  ] },
+  { t: 'Live data and settings', p: 'Tap the data pill at the top left to open <b>Data source</b>.', d: [
+    ['Schwab', 'Enter your app password once on each device. Schwab asks you to sign in again every 7 days, and the app reminds you a day ahead.'],
+    ['Setup link', '<b>Copy setup link</b> turns live data on in one tap on another device. It carries your password, so only send it to yourself.'],
+    ['Move setup', '<b>Copy all my settings</b> and <b>Load settings</b> carry your tabs, layouts, colors and lists to another device or the Home Screen app.'],
+    ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
+    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.']
+  ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
+];
+let guideAt = 0;
+function paintGuide() {
+  const g = GUIDE[guideAt], n = GUIDE.length;
+  document.getElementById('guideStep').textContent = `Guide · ${guideAt + 1} of ${n}`;
+  document.getElementById('guidePage').innerHTML = `<h2 id="guideTitle">${g.t}</h2><p>${g.p}</p><dl>${g.d.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${g.tip ? `<p class="tip">${g.tip}</p>` : ''}`;
+  document.getElementById('guidePage').scrollTop = 0;
+  document.getElementById('guideBack').disabled = !guideAt;
+  document.getElementById('guideNext').textContent = guideAt === n - 1 ? 'Done' : 'Next';
+  document.getElementById('guideDots').innerHTML = GUIDE.map((x, i) => `<button aria-label="Page ${i + 1}: ${esc(x.t)}" aria-current="${i === guideAt}"></button>`).join('');
+  document.querySelectorAll('#guideDots button').forEach((b, i) => b.onclick = () => { guideAt = i; paintGuide(); });
+}
+function openGuide(at = 0) { guideAt = at; paintGuide(); document.getElementById('guide').hidden = false; document.getElementById('guideNext').focus(); }
+const closeGuide = () => { document.getElementById('guide').hidden = true; };
+document.getElementById('guideX').onclick = closeGuide;
+document.getElementById('guide').addEventListener('click', e => { if (e.target.id === 'guide') closeGuide(); });
+document.getElementById('guideBack').onclick = () => { if (guideAt) { guideAt--; paintGuide(); } };
+document.getElementById('guideNext').onclick = () => { if (guideAt < GUIDE.length - 1) { guideAt++; paintGuide(); } else closeGuide(); };
+document.addEventListener('keydown', e => {
+  if (document.getElementById('guide').hidden) return;
+  if (e.key === 'Escape') closeGuide();
+  else if (e.key === 'ArrowRight' && guideAt < GUIDE.length - 1) { guideAt++; paintGuide(); }
+  else if (e.key === 'ArrowLeft' && guideAt) { guideAt--; paintGuide(); }
+});
+
 document.getElementById('editBtn').addEventListener('click', () => { editing = !editing; maxed = null; closePop(); render(); });
 document.getElementById('modeAll').addEventListener('click', () => { state.chartsOnly = false; orientLayout(); render(); });
 document.getElementById('modeCharts').addEventListener('click', () => { state.chartsOnly = true; orientLayout(); render(); });
