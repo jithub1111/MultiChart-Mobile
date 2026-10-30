@@ -1989,16 +1989,24 @@ class Tile {
         if (e.clientX - body.getBoundingClientRect().left > this.plotWidth()) return;  // on the price scale
         hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e) };
         band.style.height = (body.clientHeight - (this.vchart || this.chart).timeScale().height()) + 'px';
+        // Follow the drag over the whole window: running past the chart's edge (into the next panel,
+        // say) stops the band at the edge and still zooms, as in thinkorswim.
+        addEventListener('pointermove', moveHl, true);
+        addEventListener('pointerup', endHl, true);
+        addEventListener('pointercancel', endHl, true);
       }, true);
-      body.addEventListener('pointermove', e => {
+      const moveHl = e => {
         if (!hl || e.pointerId !== hl.id) return;
         hl.x1 = paneX(e);
         const w = Math.abs(hl.x1 - hl.x0);
         band.hidden = w < 6;
         band.style.left = Math.min(hl.x0, hl.x1) + 'px'; band.style.width = w + 'px';
-      }, true);
+      };
       const endHl = e => {
         if (!hl || e.pointerId !== hl.id) return;
+        removeEventListener('pointermove', moveHl, true);
+        removeEventListener('pointerup', endHl, true);
+        removeEventListener('pointercancel', endHl, true);
         const { x0, x1 } = hl;
         hl = null; band.hidden = true;
         if (e.type !== 'pointerup' || Math.abs(x1 - x0) < 12) return;
@@ -2007,8 +2015,6 @@ class Tile {
         ts.setVisibleLogicalRange({ from: a, to: b });
         this.showReset();
       };
-      body.addEventListener('pointerup', endHl, true);
-      body.addEventListener('pointercancel', endHl, true);
       // With highlight to zoom, the scroll wheel moves the chart through time instead of zooming:
       // down (or a swipe left on a trackpad) goes later, up goes earlier. Ctrl/pinch still zooms.
       body.addEventListener('wheel', e => {
