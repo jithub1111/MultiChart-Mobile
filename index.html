@@ -975,10 +975,11 @@ function reloadSym(sym, keepView) { tiles.forEach(t => { if (t.cell.sym === sym)
 const median = a => { const b = [...a].sort((x, y) => x - y), h = b.length >> 1; return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2; };
 const quoteMid = s => s.qb > 0 && s.qa >= s.qb && s.qa - s.qb < s.qa * 0.02 ? (s.qa + s.qb) / 2 : null;
 // How far a price may stray: 1.5%, or ten times the usual one-minute range nearby when the stock is
-// swinging hard (after earnings, say), so real moves stay.
+// swinging hard (after earnings, say), so real moves stay. Minutes with a single trade (flat dots
+// before the open) say nothing about how much it swings, so they don't count.
 function tolerance(s, ref, i) {
-  const m = s.m1, near = m.slice(Math.max(0, i - 10), i).concat(m.slice(i + 1, i + 11));
-  return ref * Math.max(0.015, near.length ? 10 * median(near.map(b => (b.high - b.low) / b.close)) : 0);
+  const m = s.m1, near = m.slice(Math.max(0, i - 10), i).concat(m.slice(i + 1, i + 11)).map(b => (b.high - b.low) / b.close).filter(r => r > 0);
+  return ref * Math.max(0.015, near.length ? 10 * median(near) : 0);
 }
 // Cleans the minute bars from index `from` on. Returns true if any bar changed.
 function scrub(s, from = 0) {
@@ -989,6 +990,9 @@ function scrub(s, from = 0) {
     const before = median(m.slice(Math.max(0, i - 3), i).map(x => x.close));
     const after = next.length >= 2 ? median(next.map(x => x.close)) : quoteMid(s);
     if (after == null) continue;
+    // A misprint sticks out of a price that is the same just before and just after it. When the price
+    // itself moved (a spike at the open, a breakout), the bars around it are real, as in thinkorswim.
+    if (Math.abs(before - after) > tolerance(s, before, i)) continue;
     let tol = before * 0.015;
     const off = v => Math.abs(v - before) > tol && Math.abs(v - after) > tol;
     if (!off(b.high) && !off(b.low)) continue;
