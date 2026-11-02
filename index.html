@@ -764,6 +764,13 @@ function bars(sym, tf) {
   const s = store(sym), k = TF[tf];
   return clean(k === 'D' ? s.daily.map(b => ({ ...b })) : k === 'W' ? aggWeekly(s.daily) : aggIntraday(s.m1, k));
 }
+// Just the newest bar of a timeframe, built from the last few minutes or days. Used on every heartbeat, so a chart
+// doesn't rebuild its whole history (thousands of bars) twice a second.
+function lastBar(sym, tf) {
+  const s = store(sym), k = TF[tf];
+  const one = k === 'D' ? s.daily.slice(-1).map(b => ({ ...b })) : k === 'W' ? aggWeekly(s.daily.slice(-6)) : aggIntraday(s.m1.slice(-k), k);
+  return clean(one).pop();
+}
 // The chart needs bars with real numbers, each later than the one before.
 function clean(list) {
   let t = -Infinity;
@@ -2288,6 +2295,18 @@ class Tile {
     const a = tosLook() ? '' : '99', up = css('--up') + a, down = css('--down') + a;
     return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
   }
+  // VWAP for the newest bar: the day's earlier bars are summed once per bar, then only the newest one changes.
+  lastVwap(list) {
+    const lb = list[list.length - 1], day = Math.floor(lb.time / 86400);
+    let v = this.vwBase;
+    if (!v || v.day !== day || v.n !== list.length) {
+      v = this.vwBase = { day, n: list.length, pv: 0, vv: 0 };
+      for (let i = list.length - 2; i >= 0 && Math.floor(list[i].time / 86400) === day; i--) { const b = list[i]; v.pv += (b.high + b.low + b.close) / 3 * b.volume; v.vv += b.volume; }
+    }
+    const pv = v.pv + (lb.high + lb.low + lb.close) / 3 * lb.volume, vv = v.vv + lb.volume, pt = { time: lb.time, value: vv ? pv / vv : lb.close };
+    if (!v.vv) pt.color = 'rgba(0,0,0,0)';
+    return pt;
+  }
   // The last price's label (and line) on hollow candles, in the up, down or flat color.
   paintLastLabel() {
     const lb = this.list && this.list[this.list.length - 1];
@@ -2336,7 +2355,7 @@ class Tile {
       const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
       this.candles.applyOptions({ priceFormat: fmt });
       this.vw.applyOptions({ priceFormat: fmt });
-      this.list = list;
+      this.list = list; this.sig = '';
       this.candles.setData(this.candleData(list));
       this.paintLastLabel();
       this.volume.setData(this.volData(list));
@@ -2362,15 +2381,27 @@ class Tile {
     if (!ready(s)) return;
     const p = last(s), d = dec(p);
     if (this.kind === 'chart') {
-      const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
-      // The chart only takes a bar at or after its newest one; anything else means the history changed.
-      if (lb && lb.time < this.lastT) return this.load(true);
-      if (lb) { this.candles.update(this.candleData([lb])[0]); this.paintLastLabel(); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
-      if (this.autoFit && list.length !== this.fitN) this.refit();
+      // Most heartbeats only change the newest bar. The whole history is rebuilt only when a new bar starts.
+      let lb = lastBar(this.cell.sym, this.cell.tf), list = this.list || [];
+      if (lb && lb.time !== this.lastT) {
+        const n = list.length;
+        list = this.list = bars(this.cell.sym, this.cell.tf); lb = list[list.length - 1];
+        this.vwBase = null;
+        // The chart only takes a bar at or after its newest one, one at a time; anything else means the history changed.
+        if (lb && (lb.time < this.lastT || list.length > n + 1)) return this.load(true);
+      } else if (lb && list.length) list[list.length - 1] = lb;
+      // The chart redraws its whole series for every change it's handed, so a bar that hasn't moved since the last
+      // heartbeat (quiet tickers, most of the day) isn't handed over again.
+      const sig = lb ? [lb.time, lb.open, lb.high, lb.low, lb.close, lb.volume, this.showVwap].join() : '';
+      if (sig !== this.sig) {
+        this.sig = sig;
+        if (lb) { this.candles.update(this.candleData([lb])[0]); this.paintLastLabel(); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
+        if (this.autoFit && list.length !== this.fitN) this.refit();
+        const lg = this.$('.legend');
+        if (this.showVwap && lb) { const lv = this.lastVwap(list); this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
+        else lg.innerHTML = '';
+      }
       this.alignScales();
-      const lg = this.$('.legend');
-      if (this.showVwap && lb) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
-      else lg.innerHTML = '';
       this.watermark();
       this.paintDrawings();
     } else if (this.kind !== 'fund') {
@@ -4282,11 +4313,29 @@ function beat() {
     // Watchlist prices stream from Schwab; a fresh batch now and then fills any gaps.
     if (Date.now() - quotesAt > (dataCfg.mode === 'schwab' && streamUp() ? 120e3 : 15e3)) refreshQuotes();
   } else new Set([...wanted(), ...watchSyms()]).forEach(sym => tick(store(sym)));
-  tiles.forEach(t => t.update());
+  // A window nobody can see (minimized, or behind others) skips redrawing until it shows again.
+  if (!document.hidden || vp.on) tiles.forEach(t => t.update());
+  dropUnused();
   if (leader) checkAlerts();  // one window watches the alerts, so a hit beeps once
   if (vp.on) paintPip();
 }
 setInterval(beat, 700);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tiles.forEach(t => t.kind === 'chart' && t.chart ? t.load(true) : t.update()); });
+// Price history for symbols this window no longer shows (another tab, a changed symbol) is let go after a few
+// minutes, so it doesn't pile up in memory over a long day. It loads again if it comes back.
+const unusedSince = new Map();
+let dropAt = 0;
+function dropUnused() {
+  const now = Date.now();
+  if (now - dropAt < 30e3) return;
+  dropAt = now;
+  const keep = wanted();
+  Object.keys(stores).forEach(sym => {
+    if (keep.has(sym) || !ready(stores[sym])) { unusedSince.delete(sym); return; }
+    if (!unusedSince.has(sym)) unusedSince.set(sym, now);
+    else if (now - unusedSince.get(sym) > 3 * 60e3) { delete stores[sym]; unusedSince.delete(sym); }
+  });
+}
 if (vidPip) setTimeout(pipFeed, 1000);
 setInterval(backfill, 60000);
 // Fundamentals panels check for fresh news and update "5m ago" times once a minute.
