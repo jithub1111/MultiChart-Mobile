@@ -429,6 +429,16 @@ html.nobar .showbar { display: inline-flex; }
 .grip svg { width: 12px; height: 12px; }
 .wr .wx { border: 0; background: none; color: var(--down); font-size: 13px; padding: 0; height: 100%; }
 .wr.drag { background: var(--head); box-shadow: 0 2px 10px rgba(0, 0, 0, .5); position: relative; z-index: 2; }
+/* A list that fills itself from the daily SSS report: a line about which report, and each ticker's score. */
+.wautobar { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 7px; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border-bottom: 1px solid var(--line); font-family: var(--ui); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.wautobar > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wautobar b { color: var(--fg); font-weight: 600; }
+.wautobar .btn { height: 20px; padding: 0 7px; font-size: 11px; }
+.wr .ws .wtag { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 3px; font-size: 9.5px; font-weight: 600; line-height: 14px; font-style: normal; vertical-align: 1px;
+  color: #f5b041; background: color-mix(in srgb, #f5b041 16%, transparent); }
+.wr .ws .wtag.go { color: var(--up); background: color-mix(in srgb, var(--up) 16%, transparent); }
+.wr .ws .wtag.subpar { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.wr .ws .wtag small { font-size: 8px; opacity: .85; margin-left: 2px; }
 .wempty { margin: 0; padding: 14px 12px; color: var(--muted); font-family: var(--ui); font-size: 12.5px; line-height: 1.5; }
 .wempty .btn { margin-top: 8px; }
 .picks button:disabled { opacity: .35; }
@@ -1652,6 +1662,102 @@ function pickTicker(t, sym) {
   setSymbol(t, sym);
 }
 
+/* ---------- Auto watchlist from the daily SSS report ---------- */
+// The SSS report's tickers are copied into reports/sss.json next to this page (newest report first,
+// each { id, date, label, tickers: [{ ticker, score, rating, section }] }). A list with "auto" settings
+// replaces its tickers with the chosen report's, best section and highest score first, and checks for
+// a newer report every few minutes.
+const AUTO_SRC = 'reports/sss.json', AUTO_SECT = { main: 'Main', t2: 'T+2', subpar: 'Subpar' }, AUTO_ORDER = ['main', 't2', 'subpar'];
+const AUTO_PICKS = { latest: 'Newest report', Morning: 'Newest Morning report', 'Night Before': 'Newest Night Before report' };
+let autoReports = null, autoErr = '', autoAt = 0, autoBusy = false;
+const autoKey = l => [l.auto.rid || '', Object.entries(l.auto.meta || {}).map(([k, v]) => k + v.join(':')).join()].join('/');
+function autoTag(l, sym) {
+  const m = l.auto && l.auto.meta && l.auto.meta[sym];
+  if (!m) return '';
+  const [score, sec] = m;
+  return `<i class="wtag${score >= 75 ? ' go' : ''}${sec === 'subpar' ? ' subpar' : ''}" title="${AUTO_SECT[sec] || ''} · score ${score}">${score}${sec === 't2' ? '<small>T2</small>' : ''}</i>`;
+}
+function autoLine(l) {
+  const a = l.auto;
+  if (!a.rid) return autoErr ? esc(autoErr) : 'Loading the daily report…';
+  return `SSS <b>${esc(a.label || '')} ${esc(a.date || '')}</b>${autoAt ? ' · checked ' + new Date(autoAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}`;
+}
+function autoReport(l) {
+  if (!autoReports || !autoReports.length) return null;
+  const p = l.auto.pick || 'latest';
+  return p === 'latest' ? autoReports[0] : autoReports.find(r => r.id === p || r.label === p) || autoReports[0];
+}
+// Fill one auto list from the report it follows. Returns true when its tickers changed.
+function fillAuto(l) {
+  const r = autoReport(l);
+  if (!r) return false;
+  const sec = l.auto.sec && l.auto.sec.length ? l.auto.sec : AUTO_ORDER, seen = new Set(), meta = {};
+  const rows = r.tickers.filter(x => x && x.ticker && sec.includes(x.section || 'main'))
+    .sort((a, b) => AUTO_ORDER.indexOf(a.section || 'main') - AUTO_ORDER.indexOf(b.section || 'main') || (b.score || 0) - (a.score || 0));
+  const syms = [];
+  rows.forEach(x => {
+    const s = parseSyms(x.ticker)[0];
+    if (!s || seen.has(s)) return;
+    seen.add(s); syms.push(s); meta[s] = [Math.round(+x.score || 0), x.section || 'main'];
+  });
+  const was = l.auto.rid, changed = syms.join() !== l.syms.join() || JSON.stringify(meta) !== JSON.stringify(l.auto.meta || {});
+  Object.assign(l.auto, { rid: r.id, label: r.label, date: r.date, meta });
+  l.syms = syms;
+  if (was && was !== r.id) toast(`${esc(l.name)} now follows the ${esc(r.label)} ${esc(r.date)} report: ${syms.length} ticker${syms.length === 1 ? '' : 's'}.`);
+  return changed || was !== r.id;
+}
+async function fetchReports(force) {
+  if (autoBusy || (!force && !wlists.some(l => l.auto))) return;
+  autoBusy = true;
+  try {
+    const res = await fetch(AUTO_SRC + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('The daily report list could not be loaded (' + res.status + ').');
+    const j = await res.json(), list = (Array.isArray(j) ? j : j.reports || []).filter(r => r && r.id && Array.isArray(r.tickers));
+    if (!list.length) throw new Error('No daily reports have been copied over yet.');
+    // Newest first. A "Night Before" report is written the evening before its date, so that day's Morning report is newer.
+    const when = r => String(r.id).slice(0, 8) + (/morning/i.test(r.label || r.id) ? '2' : '1');
+    autoReports = list.map((r, i) => [r, i]).sort((x, y) => when(y[0]).localeCompare(when(x[0])) || x[1] - y[1]).map(x => x[0]);
+    autoErr = ''; autoAt = Date.now();
+  } catch (e) {
+    autoErr = /fetch|network|load failed/i.test(e.message) ? 'No connection to load the daily report.' : e.message;
+  } finally { autoBusy = false; }
+  let any = false;
+  wlists.forEach(l => { if (l.auto && fillAuto(l)) any = true; });
+  if (any) { saveLists(); syncStream(); }
+  tiles.forEach(t => { if (t.kind === 'watch') { t.wKey = ''; t.load(); } });
+}
+setInterval(() => { if (document.visibilityState === 'visible') fetchReports(); }, 5 * 60e3);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - autoAt > 2 * 60e3) fetchReports(); });
+setTimeout(() => fetchReports(), 800);
+function autoPop(anchor, t) {
+  const l = listFor(t.cell), a = l.auto, sec = a.sec && a.sec.length ? a.sec : AUTO_ORDER;
+  const recent = (autoReports || []).slice(0, 6);
+  openPop(anchor, `
+    <h4>${esc(l.name)}</h4>
+    <p class="note">This list fills itself with the tickers highlighted in your daily SSS report, best section and highest score first. A green score is 75 or more (a go), amber is one to watch.</p>
+    <div class="menu">${Object.entries(AUTO_PICKS).map(([k, v]) => `<button data-p="${esc(k)}" aria-current="${(a.pick || 'latest') === k}"><span>${v}</span></button>`).join('')}
+      ${recent.map(r => `<button data-p="${esc(r.id)}" aria-current="${a.pick === r.id}"><span>${esc(r.label)} ${esc(r.date)} <small>${r.tickers.length} tickers</small></span></button>`).join('')}</div>
+    <hr>
+    <div class="menu">${AUTO_ORDER.map(k => `<button data-sec="${k}"><span>${AUTO_SECT[k]} section</span><span class="check ${sec.includes(k) ? 'on' : ''}"></span></button>`).join('')}</div>
+    <hr>
+    <div class="menu"><button data-a="now"><span>Check for a new report now</span></button>
+      <button data-a="plain"><span>Make it a normal list <small>keeps these tickers and stops updating</small></span></button></div>
+    <p class="note">${autoErr ? esc(autoErr) + ' ' : ''}Tickers you add or remove here are replaced when the next report comes in.</p>`, p => {
+    const redo = () => { fillAuto(l); saveLists(); syncStream(); paintLists(); };
+    p.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { a.pick = b.dataset.p; closePop(); redo(); });
+    p.querySelectorAll('[data-sec]').forEach(c => c.onclick = () => {
+      const k = c.dataset.sec, on = (a.sec && a.sec.length ? a.sec : AUTO_ORDER).filter(x => x !== k);
+      if (!c.querySelector('.check').classList.contains('on')) on.push(k);
+      if (!on.length) return;
+      a.sec = AUTO_ORDER.filter(x => on.includes(x));
+      p.querySelectorAll('[data-sec]').forEach(x => x.querySelector('.check').classList.toggle('on', a.sec.includes(x.dataset.sec)));
+      redo();
+    });
+    p.querySelector('[data-a=now]').onclick = () => { closePop(); fetchReports(true).then(() => toast(autoErr ? esc(autoErr) : `Checked: newest is ${esc(autoReports[0].label)} ${esc(autoReports[0].date)}.`, !!autoErr)); };
+    p.querySelector('[data-a=plain]').onclick = () => { delete l.auto; closePop(); saveLists(); paintLists(); };
+  });
+}
+
 // Prices for the rows. Demo mode reads the simulated market. Live mode keeps a light quote per ticker
 // instead of loading its chart history: one batch request, then Schwab's live Level I updates
 // (with Alpaca, a fresh batch every 15 seconds).
@@ -1740,12 +1846,18 @@ function listPop(anchor, t) {
   openPop(anchor, `
     <h4>Watchlists</h4>
     <div class="menu">${wlists.map(l => `<button data-l="${l.id}" aria-current="${l === cur}"><span>${esc(l.name)} <small>${l.syms.length} ticker${l.syms.length === 1 ? '' : 's'}</small></span></button>`).join('')}</div>
+    <div class="menu"><button data-a="auto"><span>Auto list from the daily report <small>fills itself with the tickers the SSS report highlights</small></span></button></div>
     <form class="symform" id="wlNew"><input maxlength="30" placeholder="New list name" aria-label="New list name" ${plain}><button class="btn primary" type="submit">Create</button></form>
     <hr>
     <form class="symform" id="wlRename"><input maxlength="30" value="${esc(cur.name)}" aria-label="List name" ${plain}><button class="btn" type="submit">Rename</button></form>
     <div class="menu"><button data-a="del" class="danger" ${wlists.length < 2 ? 'disabled' : ''}><span>Delete “${esc(cur.name)}”</span></button></div>`, p => {
     const show = l => { t.cell.wl = l.id; t.wediting = false; save(); t.load(); t.paintEdit(); syncStream(); };
     p.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { closePop(); show(wlists.find(l => l.id === b.dataset.l)); });
+    p.querySelector('[data-a=auto]').onclick = () => {
+      let l = wlists.find(x => x.auto);
+      if (!l) { l = { id: newListId(), name: 'SSS report', syms: [], auto: { pick: 'latest', sec: ['main', 't2', 'subpar'] } }; wlists.push(l); saveLists(); }
+      closePop(); show(l); fetchReports(true);
+    };
     p.querySelector('#wlNew').onsubmit = e => {
       e.preventDefault();
       const name = e.target.querySelector('input').value.trim();
@@ -2051,7 +2163,7 @@ class Tile {
       wl.addEventListener('click', e => {
         if (e.target.closest('.wgrab') || Date.now() - (this.wResized || 0) < 400) return;
         const act = e.target.closest('[data-a]'), k = e.target.closest('[data-k]'), x = e.target.closest('.wx'), row = e.target.closest('.wr[data-s]');
-        if (act) { if (act.dataset.a === 'done') { this.wediting = false; this.load(); } else wlAddPop(this.$('.wadd'), this); }
+        if (act) { if (act.dataset.a === 'done') { this.wediting = false; this.load(); } else if (act.dataset.a === 'auto') autoPop(act, this); else wlAddPop(this.$('.wadd'), this); }
         else if (k) this.sortBy(k.dataset.k);
         else if (x) removeFromList(listFor(this.cell), row.dataset.s);
         else if (row && !this.wediting) pickTicker(this, row.dataset.s);
@@ -2088,16 +2200,18 @@ class Tile {
   paintWatch() {
     const l = listFor(this.cell), ed = !!this.wediting, wl = this.$('.wl'), sort = ed ? '' : this.cell.wsort || '';
     const mine = !ed && wcolsOf(this.cell), cols = ed ? ['sym', 'name'] : mine || WAUTO;
-    const key = [l.id, l.syms.join(), ed, sort, cols.join(), !!mine].join('|');
+    const key = [l.id, l.syms.join(), ed, sort, cols.join(), !!mine, l.auto ? autoKey(l) : ''].join('|');
     if (key !== this.wKey) {
       const [sk, sd] = sort.split(':'), top = wl.scrollTop, left = wl.scrollLeft, cls = k => WCOL[k].c + (WCOL[k].f && k !== 'name' ? ' num' : '');
       const head = ed ? '<div class="wedit"><span>Drag the dots to reorder. ✕ removes.</span><button class="btn" data-a="done">Done</button></div>'
         : `<div class="wr wh">${cols.map(k => `<span class="${cls(k)}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}><span class="wt">${WCOL[k].h}</span><i class="wgrab" aria-hidden="true"></i></span>`).join('')}</div>`;
-      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${cols.map(k => `<span class="${cls(k)}">${k === 'sym' ? esc(s) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
+      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${cols.map(k => `<span class="${cls(k)}">${k === 'sym' ? esc(s) + (ed ? '' : autoTag(l, s)) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
       wl.classList.toggle('editing', ed);
       wl.classList.toggle('auto', !ed && !mine);
       wl.classList.toggle('custom', !!mine);
-      wl.innerHTML = head + (l.syms.length ? `<div class="wrows">${rows}</div>` : `<p class="wempty">${esc(l.name)} is empty. Add the tickers you want to keep an eye on, then tap one to open it on the linked charts.<br><button class="btn primary" data-a="add">Add tickers</button></p>`);
+      const bar = l.auto && !ed ? `<div class="wautobar"><span>${autoLine(l)}</span><button class="btn" data-a="auto">Report</button></div>` : '';
+      wl.innerHTML = bar + head + (l.syms.length ? `<div class="wrows">${rows}</div>` : l.auto ? `<p class="wempty">${autoReports ? 'The report has no tickers in the sections you picked.' : autoErr ? esc(autoErr) : 'Loading the daily report…'}</p>`
+        : `<p class="wempty">${esc(l.name)} is empty. Add the tickers you want to keep an eye on, then tap one to open it on the linked charts.<br><button class="btn primary" data-a="add">Add tickers</button></p>`);
       wl.scrollTop = top; wl.scrollLeft = left;
       this.wrows = new Map([...wl.querySelectorAll('.wr[data-s]')].map(el => [el.dataset.s, { el, cells: Object.fromEntries(cols.map(k => [k, el.querySelector('.' + WCOL[k].c)])), shown: {}, cls: {} }]));
       this.wShown = cols;
@@ -3162,7 +3276,7 @@ const GUIDE = [
     ['Level II', 'The order book: bids on the left, asks on the right, each price level in its own color. Its menu has <b>Level II options</b> (Colored or Basic style, columns, group by price) and <b>Text size</b>.'],
     ['Time & Sales', 'Each trade as it happens: green at the ask, red at the bid.'],
     ['L2 + T&S', 'Both in one box, side by side.'],
-    ['Watchlist', 'Lists of tickers with live prices. Tap a ticker to open it on the linked charts, tap + to add, tap a heading to sort. The menu picks columns and edits the list.'],
+    ['Watchlist', 'Lists of tickers with live prices. Tap a ticker to open it on the linked charts, tap + to add, tap a heading to sort. The menu picks columns and edits the list. Tap the list name and pick <b>Auto list from the daily report</b> for a list that fills itself with the SSS report\'s tickers.'],
     ['Fundamentals', 'News, key statistics (float, short interest and more), the company profile and SEC filings.']
   ] },
   { t: 'Tabs, windows and the desktop app', p: 'Ways to spread out:', d: [
