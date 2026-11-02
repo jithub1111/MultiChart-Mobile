@@ -2550,6 +2550,15 @@ const READY = [{
     [['QSI', '5m', 3], ['SAIQ', '15m', 10], ['AIOK', '1m', 10], ['NUAI', '1m', 10]],
     [['USO', '5m', 2], ['CHSN', '1m', 10], ['PSRHF', '1m', 5], ['TPET', '2m', 5]]
   ]
+}, {
+  // /BTC futures aren't available, so IBIT stands in for it.
+  name: '16 charts (my thinkorswim grid)',
+  rows: [
+    [['GLD', 'D', '1Y'], ['IBIT', 'D', '1Y'], ['BTCS', '1m', 10], ['BTCT', '2m', 5]],
+    [['GLGDF', '5m', 10], ['USO', '1m', 10], ['RIOFF', '1m', 10], ['CYPH', 'D', '1Y']],
+    [['DSVSF', '1m', 10], ['RIOFF', '1m', 10], ['CELU', 'D', '1Y'], ['USDE', '2m', 3]],
+    [['ABBRF', '5m', 10], ['FTFT', '1m', 10], ['NLST', 'D', '1Y'], ['VRA', '1m', 10]]
+  ]
 }];
 // Every chart gets the same share of the screen.
 function fromReady(r) {
