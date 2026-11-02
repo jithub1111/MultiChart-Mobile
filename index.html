@@ -1663,10 +1663,10 @@ function pickTicker(t, sym) {
 }
 
 /* ---------- Auto watchlist from the daily SSS report ---------- */
-// The SSS report's tickers are copied into reports/sss.json next to this page (newest report first,
-// each { id, date, label, tickers: [{ ticker, score, rating, section }] }). A list with "auto" settings
-// replaces its tickers with the chosen report's, best section and highest score first, and checks for
-// a newer report every few minutes.
+// The SSS report's tickers are copied into reports/sss.json next to this page: each report is
+// { id, date, label, tickers }, where a ticker is just its symbol ("ONEG") or { ticker, score, section }.
+// The public file carries symbols only, in the report's own order. A list with "auto" settings replaces
+// its tickers with the chosen report's and checks for a newer report every few minutes.
 const AUTO_SRC = 'reports/sss.json', AUTO_SECT = { main: 'Main', t2: 'T+2', subpar: 'Subpar' }, AUTO_ORDER = ['main', 't2', 'subpar'];
 const AUTO_PICKS = { latest: 'Newest report', Morning: 'Newest Morning report', 'Night Before': 'Newest Night Before report' };
 let autoReports = null, autoErr = '', autoAt = 0, autoBusy = false;
@@ -1692,13 +1692,14 @@ function fillAuto(l) {
   const r = autoReport(l);
   if (!r) return false;
   const sec = l.auto.sec && l.auto.sec.length ? l.auto.sec : AUTO_ORDER, seen = new Set(), meta = {};
-  const rows = r.tickers.filter(x => x && x.ticker && sec.includes(x.section || 'main'))
+  const rows = r.tickers.map(x => typeof x === 'string' ? { ticker: x } : x).filter(x => x && x.ticker && sec.includes(x.section || 'main'))
     .sort((a, b) => AUTO_ORDER.indexOf(a.section || 'main') - AUTO_ORDER.indexOf(b.section || 'main') || (b.score || 0) - (a.score || 0));
   const syms = [];
   rows.forEach(x => {
     const s = parseSyms(x.ticker)[0];
     if (!s || seen.has(s)) return;
-    seen.add(s); syms.push(s); meta[s] = [Math.round(+x.score || 0), x.section || 'main'];
+    seen.add(s); syms.push(s);
+    if (x.score > 0) meta[s] = [Math.round(+x.score), x.section || 'main'];
   });
   const was = l.auto.rid, changed = syms.join() !== l.syms.join() || JSON.stringify(meta) !== JSON.stringify(l.auto.meta || {});
   Object.assign(l.auto, { rid: r.id, label: r.label, date: r.date, meta });
@@ -1731,15 +1732,15 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 setTimeout(() => fetchReports(), 800);
 function autoPop(anchor, t) {
   const l = listFor(t.cell), a = l.auto, sec = a.sec && a.sec.length ? a.sec : AUTO_ORDER;
-  const recent = (autoReports || []).slice(0, 6);
+  const recent = (autoReports || []).slice(0, 6), hasSec = recent.some(r => r.tickers.some(x => x && x.section));
   openPop(anchor, `
     <h4>${esc(l.name)}</h4>
-    <p class="note">This list fills itself with the tickers highlighted in your daily SSS report, best section and highest score first. A green score is 75 or more (a go), amber is one to watch.</p>
+    <p class="note">This list fills itself with the tickers mentioned in your daily SSS report, in the report's order.</p>
     <div class="menu">${Object.entries(AUTO_PICKS).map(([k, v]) => `<button data-p="${esc(k)}" aria-current="${(a.pick || 'latest') === k}"><span>${v}</span></button>`).join('')}
       ${recent.map(r => `<button data-p="${esc(r.id)}" aria-current="${a.pick === r.id}"><span>${esc(r.label)} ${esc(r.date)} <small>${r.tickers.length} tickers</small></span></button>`).join('')}</div>
     <hr>
-    <div class="menu">${AUTO_ORDER.map(k => `<button data-sec="${k}"><span>${AUTO_SECT[k]} section</span><span class="check ${sec.includes(k) ? 'on' : ''}"></span></button>`).join('')}</div>
-    <hr>
+    ${hasSec ? `<div class="menu">${AUTO_ORDER.map(k => `<button data-sec="${k}"><span>${AUTO_SECT[k]} section</span><span class="check ${sec.includes(k) ? 'on' : ''}"></span></button>`).join('')}</div>
+    <hr>` : ''}
     <div class="menu"><button data-a="now"><span>Check for a new report now</span></button>
       <button data-a="plain"><span>Make it a normal list <small>keeps these tickers and stops updating</small></span></button></div>
     <p class="note">${autoErr ? esc(autoErr) + ' ' : ''}Tickers you add or remove here are replaced when the next report comes in.</p>`, p => {
