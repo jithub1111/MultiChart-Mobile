@@ -2078,18 +2078,26 @@ class Tile {
       // It floats next to the cursor (below and to the right, flipping when it would run off the chart).
       const showBar = (src, p) => {
         const b = p.point && p.logical != null && this.list ? this.list[Math.round(p.logical)] : null;
-        if (!b || !p.sourceEvent && !box.dataset.on) { box.hidden = true; box.dataset.on = ''; return; }
-        if (p.sourceEvent) box.dataset.on = '1';
+        if (!b) { box.hidden = true; return; }
         const d = dec(b.close), f = v => v.toFixed(d), cls = b.close > b.open ? 'up' : b.close < b.open ? 'down' : '';
         box.innerHTML = `<span>O</span><b>${f(b.open)}</b><span>H</span><b>${f(b.high)}</b><span>L</span><b>${f(b.low)}</b><span>C</span><b class="${cls}">${f(b.close)}</b>`;
         box.hidden = false;
-        if (!p.sourceEvent) return;  // the other chart's copy of the crosshair: the box stays by the real cursor
+        // Placed from where the mouse or finger really is (followed below), else from the crosshair itself.
+        const br = body.getBoundingClientRect();
+        let x, y;
+        if (ptr) { x = ptr.x - br.left; y = ptr.y - br.top; }
+        else if (p.sourceEvent) { const cr = src.chartElement().getBoundingClientRect(); x = cr.left - br.left + p.point.x; y = cr.top - br.top + p.point.y; }
+        else return;
         const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale')) || 1;
-        const br = body.getBoundingClientRect(), cr = src.chartElement().getBoundingClientRect();
-        const x = cr.left - br.left + p.point.x, y = cr.top - br.top + p.point.y, w = box.offsetWidth * z, h = box.offsetHeight * z, gap = 14;
+        const w = box.offsetWidth * z, h = box.offsetHeight * z, gap = 14;
         const left = x + gap + w > this.plotWidth() ? x - gap - w : x + gap, top = y + gap + h > body.clientHeight ? y - gap - h : y + gap;
         box.style.left = Math.max(0, left) / z + 'px'; box.style.top = Math.max(0, top) / z + 'px';
       };
+      let ptr = null;
+      const track = e => { ptr = { x: e.clientX, y: e.clientY }; };
+      body.addEventListener('pointermove', track, true);
+      body.addEventListener('pointerdown', track, true);
+      body.addEventListener('pointerleave', () => { ptr = null; });
       [this.chart, this.vchart].forEach(c => c && c.subscribeCrosshairMove(p => showBar(c, p)));
     } else if (watch) {
       this.$('.body').innerHTML = '<div class="wl"></div>';
