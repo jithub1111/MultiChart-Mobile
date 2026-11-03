@@ -254,8 +254,10 @@ html.nobar .showbar { display: inline-flex; }
 }
 .legend b { font-weight: 500; color: var(--vwap); }
 /* The candle under the crosshair: open, high, low and close, as in thinkorswim. */
-.ohlc { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; zoom: var(--scale); display: grid; grid-template-columns: auto auto; gap: 0 8px; padding: 3px 7px; border-radius: 4px;
-  font-family: var(--num); font-size: 11px; line-height: 15px; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); white-space: nowrap;
+/* Sized from the app zoom directly rather than with CSS zoom, which Safari applies unevenly here (the lines overlapped). */
+.ohlc { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; display: grid; grid-template-columns: auto auto; align-items: center;
+  gap: 0 calc(8px * var(--scale)); padding: calc(3px * var(--scale)) calc(7px * var(--scale)); border-radius: 4px;
+  font-family: var(--num); font-size: max(9px, calc(11px * var(--scale))); line-height: 1.4; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .ohlc b { font-weight: 500; color: var(--fg); text-align: right; }
 .ohlc .up { color: var(--up); } .ohlc .down { color: var(--down); }
@@ -2088,8 +2090,7 @@ class Tile {
         if (ptr) { x = ptr.x - br.left; y = ptr.y - br.top; }
         else if (p.sourceEvent) { const cr = src.chartElement().getBoundingClientRect(); x = cr.left - br.left + p.point.x; y = cr.top - br.top + p.point.y; }
         else return;
-        const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scale')) || 1;
-        const w = box.offsetWidth * z, h = box.offsetHeight * z, gap = 14;
+        const z = 1, w = box.offsetWidth, h = box.offsetHeight, gap = 14;
         const left = x + gap + w > this.plotWidth() ? x - gap - w : x + gap, top = y + gap + h > body.clientHeight ? y - gap - h : y + gap;
         box.style.left = Math.max(0, left) / z + 'px'; box.style.top = Math.max(0, top) / z + 'px';
       };
