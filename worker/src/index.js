@@ -291,6 +291,20 @@ async function route(req, env, url) {
     }
     return json({ secContact: await env.TOKENS.get(SEC_KEY) || '' });
   }
+  // The desktop app's last layout and settings, saved when it closes, so another device can open the same setup.
+  if (p === '/setup') {
+    if (req.method === 'POST') {
+      const text = await req.text();
+      if (text.length > 4e6) throw new Fail('That setup is too large to save.', 413, 'size');
+      let body;
+      try { body = JSON.parse(text); } catch (e) { throw new Fail('That setup could not be read.', 400, 'setup'); }
+      if (!body || typeof body.data !== 'object' || !body.data) throw new Fail('That setup is empty.', 400, 'setup');
+      const data = Object.fromEntries(Object.entries(body.data).filter(([k, v]) => /^multichart-[\w-]+$/.test(k) && typeof v === 'string'));
+      await env.TOKENS.put('setup:last', JSON.stringify({ at: Date.now(), from: String(body.from || '').slice(0, 60), data }));
+      return json({ saved: true });
+    }
+    return json(JSON.parse(await env.TOKENS.get('setup:last') || 'null') || { at: 0 });
+  }
   if (p === '/pricehistory' || p === '/quotes' || p === '/instruments') return json(await schwab(env, `/marketdata/v1${p}${url.search}`));
   const sym = (url.searchParams.get('symbol') || '').toUpperCase().trim();
   if ((p === '/news' || p === '/company' || p === '/float') && !/^[A-Z0-9.\/^-]{1,12}$/.test(sym)) throw new Fail('Missing or odd symbol.', 400, 'symbol');
