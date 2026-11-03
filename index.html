@@ -856,6 +856,7 @@ const SOURCE = { alpaca: 'IEX', schwab: 'Schwab' };
 // passes on what arrives. If it closes, another window takes over (see "windows" below).
 const bus = 'BroadcastChannel' in window ? new BroadcastChannel('multichart') : null;
 const post = m => { if (bus) try { bus.postMessage(m); } catch (e) {} };
+let restoring = false;  // a saved setup is being opened: nothing may write the old one back
 let leader = !(bus && navigator.locks), leaderFeed = '';
 const remote = new Map();  // the leader's record of what each other window shows
 function others() {
@@ -2794,6 +2795,7 @@ function pid() {
 }
 
 function save() {
+  if (restoring) return;
   try {
     localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active: popTab ? savedActive : activeTab }));
     if (!popTab) localStorage.setItem(KEY, JSON.stringify(state));
@@ -3230,6 +3232,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="colors"><span>Colors</span></button>
       <button data-a="guide"><span>Guide <small>what each button does</small></span></button>
       <button data-a="desk"><span>Open last desktop setup <small>layout and settings saved when the computer app closed</small></span></button>
+      <button data-a="undo"><span>Undo setup changes <small>go back to an earlier autosave</small></span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
@@ -3239,6 +3242,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
     p.querySelector('[data-a=desk]').onclick = () => openDeskSetup();
+    p.querySelector('[data-a=undo]').onclick = () => openSetupHistory();
     p.querySelector('[data-a=ssr]').onclick = () => { closePop(); setMarker(SSR_KEY, !ssrOn); };
     p.querySelector('[data-a=halt]').onclick = () => {
       closePop(); setMarker(HALT_KEY, !haltOn);
@@ -3329,7 +3333,7 @@ const GUIDE = [
     ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
     ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.'],
     ['SSR and halts', 'Turn on the <b>SSR indicator</b> for a red S by the price when a stock is under the short sale restriction (it fell 10% below the previous close today or yesterday). The <b>Halt indicator</b> turns the chart red with a HALTED tag while Schwab reports the stock as halted.'],
-    ['Desktop setup', 'With Schwab connected, the computer app saves its layout and settings to your helper when you close it (and every few minutes). On any other device, <b>Chart settings → Open last desktop setup</b> brings the same tabs, layouts, watchlists, colors, drawings and alerts over. Each device keeps its own connection and zoom.']
+    ['Desktop setup', 'With Schwab connected, the computer app saves its layout and settings to your helper when you close it (and every few minutes). On any other device, <b>Chart settings → Open last desktop setup</b> brings the same tabs, layouts, watchlists, colors, drawings and alerts over. Each device keeps its own connection and zoom. If a change to the setup was a mistake, <b>Undo setup changes</b> lists the earlier autosaves (the last 20 changed setups); tap one to go back to it.']
   ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
 ];
 let guideAt = 0;
@@ -4274,6 +4278,8 @@ if (bus) bus.onmessage = e => {
     if (isLive()) setFeed(bad ? 'error' : m.state, bad ? bad.error : m.msg);
   }
   else if (m.t === 'close-tab' && m.id === popTab) window.close();
+  else if (m.t === 'restore') { restoring = true; if (popTab) window.close(); }
+  else if (m.t === 'restored' && !popTab) location.reload();
   else if (m.t === 'focus' && m.id === popTab) window.focus();
   else if (m.t === 'tab-open' && !popTab && tabs.some(t => t.id === m.id)) {
     outTabs.add(m.id); watchTab(m.id);
@@ -4338,6 +4344,7 @@ if (popTab && canPopOut) {
   setTimeout(() => { notePos(); setInterval(notePos, 2000); addEventListener('resize', notePos); addEventListener('pagehide', notePos); }, 1500);
 } else if (canPopOut) {
   addEventListener('pagehide', () => {
+    if (restoring) return;
     const ids = [...outTabs].filter(id => tabs.some(t => t.id === id));
     try { if (ids.length) localStorage.setItem(POPPED_KEY, JSON.stringify(ids)); } catch (e) {}
     ids.forEach(id => { const w = popWins[id]; if (w && !w.closed) w.close(); post({ t: 'close-tab', id }); });
@@ -4390,7 +4397,7 @@ function setupData() {
 const canSync = () => dataCfg.mode === 'schwab' && !!dataCfg.helper && !!dataCfg.pass;
 let setupSent = '';
 function sendSetup(closing) {
-  if (!canSync()) return;
+  if (!canSync() || restoring) return;
   const body = JSON.stringify({ from: 'desktop', data: setupData() });
   if (body === setupSent) return;
   setupSent = body;
@@ -4417,11 +4424,39 @@ async function openDeskSetup() {
     <h4>Last desktop setup</h4>
     <p class="note">Saved ${esc(when)}${tabsN ? ` · ${tabsN} tab${tabsN === 1 ? '' : 's'}` : ''}. Opening it replaces the layouts, tabs, watchlists, colors, drawings and alerts on this device. Your connection and zoom stay as they are.</p>
     <div class="menu"><button data-a="go"><span>Open it on this device</span></button></div>`, p => {
-    p.querySelector('[data-a=go]').onclick = () => {
-      Object.keys(localStorage).filter(k => k.startsWith('multichart-') && !SETUP_SKIP.includes(k)).forEach(k => localStorage.removeItem(k));
-      Object.entries(j.data).forEach(([k, v]) => { if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k) && typeof v === 'string') localStorage.setItem(k, v); });
-      location.reload();
-    };
+    p.querySelector('[data-a=go]').onclick = () => applySetup(j.data);
+  });
+}
+// Opens a saved setup here. Other windows of the app close (or reload) so none of them writes the old setup back.
+function applySetup(data) {
+  restoring = true; post({ t: 'restore' });
+  setTimeout(() => {
+    Object.keys(localStorage).filter(k => k.startsWith('multichart-') && !SETUP_SKIP.includes(k)).forEach(k => localStorage.removeItem(k));
+    Object.entries(data).forEach(([k, v]) => { if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k) && typeof v === 'string') localStorage.setItem(k, v); });
+    post({ t: 'restored' });
+    if (popTab) window.close(); else location.reload();
+  }, 400);
+}
+// Earlier autosaves, newest first, in case a change to the setup was a mistake.
+async function openSetupHistory() {
+  closePop();
+  if (!canSync()) return toast('Going back to an earlier setup needs your Schwab helper connected on this device (Data source).', true);
+  let j;
+  try { j = await helper('/setup?list=1'); } catch (e) { return toast(esc(e.message), true); }
+  const earlier = (j && j.earlier) || [];
+  if (!earlier.length) return toast('There is no earlier setup yet. One is kept each time the computer app saves a changed setup.', true);
+  const day = new Date().toDateString();
+  const when = t => { const d = new Date(t); return d.toDateString() === day ? 'Today ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+  openPop(document.getElementById('settingsBtn'), `
+    <h4>Undo setup changes</h4>
+    <p class="note">${j.last ? `Last autosave: ${esc(when(j.last))}. ` : ''}Pick an earlier setup to open it on this device. It replaces the layouts, tabs, watchlists, colors, drawings and alerts here; your connection and zoom stay.</p>
+    <div class="menu">${earlier.map((t, i) => `<button data-at="${t}"><span>${esc(when(t))}${i === 0 ? ' <small>the setup before the last autosave</small>' : ''}</span></button>`).join('')}</div>`, p => {
+    p.querySelectorAll('[data-at]').forEach(b => b.onclick = async () => {
+      let r;
+      try { r = await helper('/setup?at=' + b.dataset.at); } catch (e) { return toast(esc(e.message), true); }
+      if (!r || !r.data) return toast('That setup is no longer kept.', true);
+      closePop(); applySetup(r.data);
+    });
   });
 }
 const installed = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone;
