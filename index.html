@@ -3184,6 +3184,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
       <button data-a="guide"><span>Guide <small>what each button does</small></span></button>
+      <button data-a="desk"><span>Open last desktop setup <small>layout and settings saved when the computer app closed</small></span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
@@ -3192,6 +3193,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
+    p.querySelector('[data-a=desk]').onclick = () => openDeskSetup();
     p.querySelector('[data-a=rotate]').onclick = () => {
       rotateOn = !rotateOn; closePop();
       try { localStorage.setItem(ROTATE_KEY, rotateOn ? '1' : '0'); } catch (e) {}
@@ -3275,7 +3277,8 @@ const GUIDE = [
     ['Setup link', '<b>Copy setup link</b> turns live data on in one tap on another device. It carries your password, so only send it to yourself.'],
     ['Move setup', '<b>Copy all my settings</b> and <b>Load settings</b> carry your tabs, layouts, colors and lists to another device or the Home Screen app.'],
     ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
-    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.']
+    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.'],
+    ['Desktop setup', 'With Schwab connected, the computer app saves its layout and settings to your helper when you close it (and every few minutes). On any other device, <b>Chart settings → Open last desktop setup</b> brings the same tabs, layouts, watchlists, colors, drawings and alerts over. Each device keeps its own connection and zoom.']
   ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
 ];
 let guideAt = 0;
@@ -4322,6 +4325,53 @@ addEventListener('storage', e => {
 
 // Installing: Chrome and Edge offer it through the menu here; Safari on a Mac has File → Add to Dock.
 let installAsk = null;
+// The desktop setup travels through your Schwab helper: the main desktop window saves its layout and settings
+// there when it closes (and every few minutes while open), and any device can open it from Chart settings.
+// The connection (helper address and password) and the zoom stay each device's own.
+const SETUP_SKIP = ['multichart-data-v1', 'multichart-scale-v1'];
+function setupData() {
+  save();
+  const all = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k)) all[k] = localStorage.getItem(k); }
+  return all;
+}
+const canSync = () => dataCfg.mode === 'schwab' && !!dataCfg.helper && !!dataCfg.pass;
+let setupSent = '';
+function sendSetup(closing) {
+  if (!canSync()) return;
+  const body = JSON.stringify({ from: 'desktop', data: setupData() });
+  if (body === setupSent) return;
+  setupSent = body;
+  // A request sent as the window closes survives only with keepalive, which allows about 64 KB. Bigger setups go as
+  // normal requests and rely on the saves made while the app was open.
+  const small = body.length < 60000;
+  if (closing && !small) return;
+  try { fetch(helperBase() + '/setup', { method: 'POST', keepalive: small, headers: { 'X-App-Password': dataCfg.pass, 'Content-Type': 'application/json' }, body }).catch(() => { setupSent = ''; }); } catch (e) {}
+}
+if (canPopOut && !popTab) {
+  addEventListener('pagehide', () => sendSetup(true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) sendSetup(false); });
+  setInterval(() => sendSetup(false), 3 * 60e3);
+}
+async function openDeskSetup() {
+  closePop();
+  if (!canSync()) return toast('Opening the desktop setup needs your Schwab helper connected on this device (Data source).', true);
+  let j;
+  try { j = await helper('/setup'); } catch (e) { return toast(esc(e.message), true); }
+  if (!j || !j.at || !j.data) return toast('No desktop setup has been saved yet. Open Multichart on your computer with Schwab connected, then close it.', true);
+  const when = new Date(j.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const tabsN = (() => { try { return JSON.parse(j.data['multichart-tabs-v1']).tabs.length; } catch (e) { return 0; } })();
+  openPop(document.getElementById('settingsBtn'), `
+    <h4>Last desktop setup</h4>
+    <p class="note">Saved ${esc(when)}${tabsN ? ` · ${tabsN} tab${tabsN === 1 ? '' : 's'}` : ''}. Opening it replaces the layouts, tabs, watchlists, colors, drawings and alerts on this device. Your connection and zoom stay as they are.</p>
+    <div class="menu"><button data-a="go"><span>Open it on this device</span></button></div>`, p => {
+    p.querySelector('[data-a=go]').onclick = () => {
+      Object.keys(localStorage).filter(k => k.startsWith('multichart-') && !SETUP_SKIP.includes(k)).forEach(k => localStorage.removeItem(k));
+      Object.entries(j.data).forEach(([k, v]) => { if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k) && typeof v === 'string') localStorage.setItem(k, v); });
+      location.reload();
+    };
+  });
+}
 const installed = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installAsk = e; });
 addEventListener('appinstalled', () => { installAsk = null; toast('Multichart is installed. Open it from your Start menu, Dock or desktop.'); });
