@@ -35,6 +35,7 @@
   --ext: #9aa4b0;
   --pop: #171b21;
   --chart-bg: #0b0d10;
+  --halt-bg: #5a0c14;
   --l2-1: #f5d90a; --l2-2: #35c46a; --l2-3: #3aa0ff; --l2-4: #ff7eb6; --l2-5: #b98cff; --l2-6: #8f9aa6;
   --l2-text: #050608;
   --ts-buy: #23c26b; --ts-sell: #f2545b; --ts-mid: #e4e8ec;
@@ -219,6 +220,10 @@ html.nobar .showbar { display: inline-flex; }
 }
 .link.on { border: 0; color: #fff; }
 .last { font-size: 15px; font-weight: 700; white-space: nowrap; }
+/* Short sale restriction and trading halt markers in the panel header. */
+.ssr, .haltb { flex: none; font-family: var(--ui); font-weight: 800; color: #fff; background: #d81e2c; border-radius: 3px; line-height: 1; }
+.ssr { font-size: 11px; padding: 2px 4px; margin-right: -2px; }
+.haltb { font-size: 9.5px; padding: 3px 4px; letter-spacing: .04em; }
 .last.up { color: var(--up); } .last.down { color: var(--down); }
 .stack { display: grid; font-size: 10.5px; line-height: 1.2; white-space: nowrap; }
 .chg.up { color: var(--up); } .chg.down { color: var(--down); }
@@ -1184,12 +1189,12 @@ async function loadSchwab(s) {
   try {
     const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote`);
     const qt = j[s.sym] && j[s.sym].quote;
-    if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; }
+    if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; if (qt.securityStatus) s.status = String(qt.securityStatus); }
   } catch (e) {}
 }
 
 let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
-const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
+const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,32,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
 function sSend(sock, service, command, parameters) {
   sock.send(JSON.stringify({ requests: [{ requestid: String(sReq++), service, command, SchwabClientCustomerId: sInfo.schwabClientCustomerId, SchwabClientCorrelId: sInfo.schwabClientCorrelId, parameters }] }));
 }
@@ -1274,6 +1279,7 @@ function onSchwabData(d) {
       if (c[1] != null) s.qb = c[1];
       if (c[2] != null) s.qa = c[2];
       if (s.qb > 0 && s.qa >= s.qb) { s.bid = s.qb; s.ask = s.qa; }
+      if (c[32] != null) s.status = String(c[32]);  // Normal, Halted, Closed...
       // Schwab has no tape feed, so each new last-trade time becomes one print.
       const l1 = s.l1 || (s.l1 = {});
       const fresh = c[35] != null && c[35] !== l1.t;
@@ -1356,6 +1362,30 @@ function setZoomMode(m) {
   zoomMode = m;
   try { localStorage.setItem(ZOOM_KEY, m); } catch (e) {}
   tiles.forEach(t => t.chart && t.applyZoomMode());
+}
+// Optional markers (Chart settings): a red S for short sale restriction, and a red chart when trading is halted.
+const SSR_KEY = 'multichart-ssr-v1', HALT_KEY = 'multichart-halt-v1';
+let ssrOn = false, haltOn = false;
+try { ssrOn = localStorage.getItem(SSR_KEY) === '1'; haltOn = localStorage.getItem(HALT_KEY) === '1'; } catch (e) {}
+// Rule 201: once a stock trades 10% or more below the previous close during the regular session, short sales are
+// restricted for the rest of that day and all of the next session.
+function ssrOf(s) {
+  const D = s.daily, M = s.m1;
+  if (!D || D.length < 2 || !M || !M.length) return false;
+  const lt = M[M.length - 1].time, today = lt - lt % 86400, key = M.length + ':' + M[M.length - 1].low + ':' + D.length + ':' + s.prevClose;
+  if (s.ssrKey === key) return s.ssr;
+  let low = Infinity;
+  for (let i = M.length - 1; i >= 0 && M[i].time >= today; i--) { const sec = M[i].time % 86400; if (sec >= OPEN && sec < CLOSE) low = Math.min(low, M[i].low); }
+  const n = D.length, k = D[n - 1].time >= today ? n - 2 : n - 1;  // the latest finished session
+  s.ssr = s.prevClose > 0 && low <= s.prevClose * 0.9 || k >= 1 && D[k].low <= D[k - 1].close * 0.9;
+  s.ssrKey = key;
+  return s.ssr;
+}
+const isHalted = s => /halt/i.test(s.status || '');
+function setMarker(key, on) {
+  if (key === SSR_KEY) ssrOn = on; else haltOn = on;
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
+  tiles.forEach(t => t.update());
 }
 // Volume either sits under the candles (default) or gets its own strip with its own scale.
 const VOLSEP_KEY = 'multichart-volsep-v1';
@@ -1888,7 +1918,9 @@ class Tile {
         <button class="link" aria-label="Link group"></button>
         ${watch ? `<span class="spacer"></span><button class="ib wadd" aria-label="Add tickers">${ICON.plus}</button>` : `
         ${chart ? '' : '<span class="name"></span>'}
+        <span class="ssr" hidden title="Short sale restriction (SSR): the stock fell 10% below the previous close, so short sales are restricted today (and next session)">S</span>
         <span class="last"></span>
+        ${chart ? '<span class="haltb" hidden title="Trading in this stock is halted">HALTED</span>' : ''}
         <span class="stack chg"><span class="c1"></span><span class="c2"></span></span>
         <span class="stack ba"><span>B: <b class="bid"></b></span><span>A: <b class="ask"></b></span></span>
         ${chart ? `<select class="tf days" aria-label="Days shown">${DAYS.map(n => `<option value="${n}">${n}D</option>`).join('')}</select><select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
@@ -2467,9 +2499,20 @@ class Tile {
     this.$('.chg').className = 'stack chg ' + cls;
     this.$('.bid').textContent = s.bid.toFixed(d);
     this.$('.ask').textContent = s.ask.toFixed(d);
+    this.$('.ssr').hidden = !(ssrOn && ssrOf(s));
+    if (this.chart) {
+      const h = haltOn && isHalted(s);
+      this.$('.haltb').hidden = !h;
+      if (h !== !!this.halted) {
+        this.halted = h;
+        const bg = { layout: { background: { type: 'solid', color: h ? css('--halt-bg') : css('--chart-bg') } } };
+        [this.chart, this.vchart].forEach(c => c && c.applyOptions(bg));
+      }
+    }
   }
   retheme() {
     if (!this.chart) return;
+    this.halted = false;  // the colors below reset the background; the next update turns it red again if needed
     this.chart.applyOptions(chartColors());
     if (this.vchart) { this.vchart.applyOptions(chartColors()); this.vshade.redraw(); }
     this.candles.applyOptions(candleColors());
@@ -3180,6 +3223,8 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
+      <button data-a="ssr"><span>SSR indicator <small>red S by the price when short sales are restricted</small></span><span class="check ${ssrOn ? 'on' : ''}"></span></button>
+      <button data-a="halt"><span>Halt indicator <small>chart turns red while the stock is halted</small></span><span class="check ${haltOn ? 'on' : ''}"></span></button>
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
@@ -3192,6 +3237,11 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
+    p.querySelector('[data-a=ssr]').onclick = () => { closePop(); setMarker(SSR_KEY, !ssrOn); };
+    p.querySelector('[data-a=halt]').onclick = () => {
+      closePop(); setMarker(HALT_KEY, !haltOn);
+      if (haltOn && dataCfg.mode !== 'schwab') toast('Halts come from Schwab\'s live data, so the halt indicator works with Schwab connected.');
+    };
     p.querySelector('[data-a=rotate]').onclick = () => {
       rotateOn = !rotateOn; closePop();
       try { localStorage.setItem(ROTATE_KEY, rotateOn ? '1' : '0'); } catch (e) {}
@@ -3275,7 +3325,8 @@ const GUIDE = [
     ['Setup link', '<b>Copy setup link</b> turns live data on in one tap on another device. It carries your password, so only send it to yourself.'],
     ['Move setup', '<b>Copy all my settings</b> and <b>Load settings</b> carry your tabs, layouts, colors and lists to another device or the Home Screen app.'],
     ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
-    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.']
+    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.'],
+    ['SSR and halts', 'Turn on the <b>SSR indicator</b> for a red S by the price when a stock is under the short sale restriction (it fell 10% below the previous close today or yesterday). The <b>Halt indicator</b> turns the chart red with a HALTED tag while Schwab reports the stock as halted.']
   ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
 ];
 let guideAt = 0;
@@ -4313,6 +4364,7 @@ addEventListener('storage', e => {
     case COLOR_KEY: colors = j && typeof j === 'object' ? j : {}; applyColors(); break;
     case SCALE_KEY: if (j === 'auto' || typeof j === 'number') { scalePref = j; applyScale(); } break;
     case SAVED_KEY: savedLayouts = Array.isArray(j) ? j : []; break;
+    case SSR_KEY: case HALT_KEY: setMarker(e.key, e.newValue === '1'); break;
     case ZOOM_KEY: zoomMode = e.newValue === 'highlight' ? 'highlight' : 'pinch'; tiles.forEach(t => t.chart && t.applyZoomMode()); break;
     case VOLSEP_KEY: if ((e.newValue === '1') !== volSep) { volSep = !volSep; for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); } render(); } break;
     case ROTATE_KEY: rotateOn = e.newValue !== '0'; break;
