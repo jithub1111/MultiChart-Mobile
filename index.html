@@ -253,6 +253,12 @@ html.nobar .showbar { display: inline-flex; }
   font-family: var(--num); font-size: 11px; color: var(--muted);
 }
 .legend b { font-weight: 500; color: var(--vwap); }
+/* The candle under the crosshair: open, high, low and close, as in thinkorswim. */
+.ohlc { position: absolute; left: 6px; top: 4px; z-index: 3; pointer-events: none; zoom: var(--scale); display: flex; gap: 7px; padding: 2px 6px; border-radius: 4px;
+  font-family: var(--num); font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--line); white-space: nowrap; }
+.legend:not(:empty) ~ .ohlc { top: 21px; }
+.ohlc b { font-weight: 500; color: var(--fg); }
+.ohlc .up { color: var(--up); } .ohlc .down { color: var(--down); }
 
 /* Level II and Time & Sales */
 .msg { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; zoom: var(--scale); pointer-events: none; }
@@ -1911,7 +1917,7 @@ class Tile {
         this.fitView(); save();
       });
       const body = this.$('.body');
-      body.innerHTML = '<div class="legend"></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
+      body.innerHTML = '<div class="legend"></div><div class="ohlc" hidden></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
       this.$('.hint button').addEventListener('click', () => this.setMode(null));
       this.lines = [];
@@ -1996,19 +2002,33 @@ class Tile {
       let hl = null;
       const paneX = e => { const r = body.getBoundingClientRect(); return Math.max(0, Math.min(this.plotWidth(), e.clientX - r.left)); };
       body.addEventListener('pointerdown', e => {
-        if (hl) { hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
+        if (hl) { clearTimeout(hl.timer); hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
         if (zoomMode !== 'highlight' || this.mode || e.button > 0 || e.target.closest('.hint, .zoomreset')) return;
         if (e.clientX - body.getBoundingClientRect().left > this.plotWidth()) return;  // on the price scale
-        hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e) };
+        // With a finger or pencil, dragging moves the crosshair. Holding still for a moment first starts the highlight.
+        const touch = e.pointerType !== 'mouse';
+        hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e), cx: e.clientX, cy: e.clientY, armed: !touch };
+        if (touch) hl.timer = setTimeout(() => {
+          if (!hl || hl.armed) return;
+          hl.armed = true;
+          band.hidden = false; band.style.left = (hl.x1 - 1) + 'px'; band.style.width = '2px';
+          if (navigator.vibrate) try { navigator.vibrate(10); } catch (err) {}
+        }, 450);
         band.style.height = (body.clientHeight - (this.vchart || this.chart).timeScale().height()) + 'px';
         // Follow the drag over the whole window: running past the chart's edge (into the next panel,
         // say) stops the band at the edge and still zooms, as in thinkorswim.
-        addEventListener('pointermove', moveHl, true);
+        addEventListener('pointermove', moveHl, { capture: true, passive: false });
         addEventListener('pointerup', endHl, true);
         addEventListener('pointercancel', endHl, true);
       }, true);
       const moveHl = e => {
         if (!hl || e.pointerId !== hl.id) return;
+        if (!hl.armed) {
+          // Moved before the hold finished: this touch is for the crosshair.
+          if (Math.hypot(e.clientX - hl.cx, e.clientY - hl.cy) > 8) { clearTimeout(hl.timer); removeEventListener('pointermove', moveHl, true); removeEventListener('pointerup', endHl, true); removeEventListener('pointercancel', endHl, true); hl = null; }
+          return;
+        }
+        if (e.pointerType !== 'mouse' && e.cancelable) e.preventDefault();
         hl.x1 = paneX(e);
         const w = Math.abs(hl.x1 - hl.x0);
         band.hidden = w < 6;
@@ -2019,8 +2039,10 @@ class Tile {
         removeEventListener('pointermove', moveHl, true);
         removeEventListener('pointerup', endHl, true);
         removeEventListener('pointercancel', endHl, true);
-        const { x0, x1 } = hl;
+        const { x0, x1, armed } = hl;
+        clearTimeout(hl.timer);
         hl = null; band.hidden = true;
+        if (!armed) return;
         if (e.type !== 'pointerup' || Math.abs(x1 - x0) < 12) return;
         const ts = (this.vchart || this.chart).timeScale(), a = ts.coordinateToLogical(Math.min(x0, x1)), b = ts.coordinateToLogical(Math.max(x0, x1));
         if (a == null || b == null) return;
@@ -2051,6 +2073,18 @@ class Tile {
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
+      // The box with the candle under the crosshair. Both charts report the crosshair (the volume strip too).
+      const box = this.$('.ohlc');
+      const showBar = p => {
+        const b = p.point && p.logical != null && this.list ? this.list[Math.round(p.logical)] : null;
+        if (!b) { box.hidden = true; return; }
+        const d = dec(b.close), f = v => v.toFixed(d), t = new Date(b.time * 1000), two = n => String(n).padStart(2, '0');
+        const when = this.intraday ? `${t.getUTCMonth() + 1}/${t.getUTCDate()} ${t.getUTCHours()}:${two(t.getUTCMinutes())}` : `${t.getUTCMonth() + 1}/${t.getUTCDate()}/${two(t.getUTCFullYear() % 100)}`;
+        const cls = b.close > b.open ? 'up' : b.close < b.open ? 'down' : '';
+        box.innerHTML = `<span>${when}</span><span>O <b>${f(b.open)}</b></span><span>H <b>${f(b.high)}</b></span><span>L <b>${f(b.low)}</b></span><span>C <b class="${cls}">${f(b.close)}</b></span>`;
+        box.hidden = false;
+      };
+      [this.chart, this.vchart].forEach(c => c && c.subscribeCrosshairMove(showBar));
     } else if (watch) {
       this.$('.body').innerHTML = '<div class="wl"></div>';
       const wl = this.$('.wl');
@@ -3127,7 +3161,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-zoom="pinch" aria-current="${zoomMode === 'pinch'}"><span>Pinch to zoom <small>drag to scroll</small></span><span class="check ${zoomMode === 'pinch' ? 'on' : ''}"></span></button>
       <button data-zoom="highlight" aria-current="${zoomMode === 'highlight'}"><span>Highlight to zoom <small>drag across a chart</small></span><span class="check ${zoomMode === 'highlight' ? 'on' : ''}"></span></button>
     </div>
-    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it, and use the scroll wheel to move through time. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
+    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it, and use the scroll wheel to move through time. On a touchscreen, hold your finger still for a moment and then drag (a quick drag just moves the crosshair). Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
@@ -3185,7 +3219,7 @@ const GUIDE = [
   ] },
   { t: 'Moving around a chart', p: 'The chart works with fingers, a mouse or a trackpad.', d: [
     ['Drag', 'Scroll back in time (with pinch to zoom). The price and time scales can be dragged too.'],
-    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead.'],
+    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead (on a touchscreen, hold for a moment first). The box at the top left shows the open, high, low and close of the candle under the crosshair.'],
     ['Double-tap', 'Zooms all the way out over everything loaded, as in thinkorswim. The button on the chart goes back.'],
     ['Crosshair', 'Follows your finger or mouse and shows the price and time under it, on the volume strip too.'],
     ['Tap a price', 'Tap the price scale to set an alert there. When it hits, a pop-up shows and the app beeps.']
