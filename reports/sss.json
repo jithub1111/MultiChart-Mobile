@@ -1,4 +1,5 @@
 [
+{"id": "20261103-morning", "date": "11/03/26", "label": "Morning", "tickers": ["SEGG", "INO", "BLZE", "SGRX", "ONEG", "CVEO", "TNMG"]},
 {"id": "20261103-night", "date": "11/03/26", "label": "Night Before", "tickers": ["SEGG", "INO", "BLZE", "CLRO", "ONEG", "CVEO", "TNMG", "SGRX"]},
 {"id": "20261102-morning", "date": "11/02/26", "label": "Morning", "tickers": ["ONEG", "INO", "CLRO", "BOOM", "AIOK", "TOYO", "PCLA"]},
 {"id": "20261102-night", "date": "11/02/26", "label": "Night Before", "tickers": ["ONEG", "INO", "BOOM", "AIOK", "NFE", "TOYO", "PCLA"]},
