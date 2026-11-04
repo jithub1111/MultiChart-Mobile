@@ -3364,7 +3364,13 @@ function symbolPop(anchor, t) {
     <div class="sugg" hidden></div>
     ${recent.length ? `<h4>Recent</h4><div class="picks">${recent.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}`, p => {
     const input = p.querySelector('input'), box = p.querySelector('.sugg');
-    const set = sym => { sym = sym.trim().toUpperCase().replace(/[^A-Z0-9.\/]/g, ''); if (!sym) return; setSymbol(t, sym); closePop(); };
+    // Enter keeps the box open with the new ticker highlighted, like thinkorswim, so the next one can be typed
+    // straight away. Tapping a suggestion or a recent ticker closes it.
+    const set = (sym, stay) => {
+      sym = sym.trim().toUpperCase().replace(/[^A-Z0-9.\/]/g, ''); if (!sym) return;
+      setSymbol(t, sym); closePop();
+      if (stay) symbolPop(anchor.isConnected ? anchor : t.$('.sym'), t);
+    };
     let rows = [], hi = -1, typed = false, ask = 0, timer = 0;
     const paint = () => {
       box.hidden = !rows.length;
@@ -3392,9 +3398,9 @@ function symbolPop(anchor, t) {
     p.querySelector('form').onsubmit = e => {
       e.preventDefault();
       const q = input.value.trim().toUpperCase();
-      if (hi >= 0 && rows[hi]) return set(rows[hi].sym);
-      if (rows[0] && !rows.some(x => x.sym === q) && !rows[0].sym.startsWith(q)) return set(rows[0].sym);
-      set(q);
+      if (hi >= 0 && rows[hi]) return set(rows[hi].sym, true);
+      if (rows[0] && !rows.some(x => x.sym === q) && !rows[0].sym.startsWith(q)) return set(rows[0].sym, true);
+      set(q, true);
     };
     p.querySelectorAll('.picks [data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
     // The ticker starts highlighted, so typing replaces it.
@@ -3505,7 +3511,7 @@ const GUIDE = [
     ['−  Auto  +', 'Makes the whole app smaller or bigger. Each tab keeps its own zoom, so zooming one tab leaves the others alone. Tap the middle to go back to <b>Auto</b>.']
   ] },
   { t: 'A chart panel', p: 'The header across the top of every chart:', d: [
-    ['SPY ▾', 'The ticker. Tap it and just start typing: the old one is highlighted, and matching tickers show up as you type (with Schwab connected, every listed and OTC symbol, also by company name). Your recent tickers are below.'],
+    ['SPY ▾', 'The ticker. Tap it and just start typing: the old one is highlighted, and after you press Enter the new one stays highlighted so you can type the next one straight away, and matching tickers show up as you type (with Schwab connected, every listed and OTC symbol, also by company name). Your recent tickers are below.'],
     ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all. There are 12 groups.'],
     ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
     ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 20Y for daily and weekly.'],
