@@ -383,6 +383,11 @@ html.nobar .showbar { display: inline-flex; }
 .picks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 4px 4px; }
 .picks button { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 6px 0; font-family: var(--num); font-size: 12px; font-weight: 600; }
 .picks button:hover { border-color: var(--accent); }
+.sugg { display: flex; flex-direction: column; padding: 0 4px 8px; width: 260px; max-width: 100%; }
+.sugg button { display: flex; align-items: baseline; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 6px; min-width: 0; }
+.sugg button b { font-family: var(--num); font-size: 13px; font-weight: 700; flex: none; min-width: 48px; }
+.sugg button span { font-size: 11.5px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.sugg button:hover, .sugg button.hi { background: var(--head); }
 .note { margin: 6px 6px 2px; font-size: 12px; color: var(--muted); max-width: 250px; line-height: 1.4; }
 /* workspace tabs */
 .tabs { display: flex; gap: 4px; padding-bottom: 6px; overflow-x: auto; scrollbar-width: none; flex: none; }
@@ -2956,6 +2961,7 @@ document.getElementById('linkLines').addEventListener('change', e => { linkLines
 
 function toggleMax(t) { maxed = maxed === t.cell.id ? null : t.cell.id; render(); }
 function setSymbol(t, sym) {
+  noteRecent(sym);
   const g = t.cell.link;
   allCells().forEach(c => { if (c === t.cell || (g && c.link === g)) c.sym = sym; });
   tiles.forEach(x => { if (x.cell === t.cell || (g && x.cell.link === g)) x.load(); });
@@ -3166,15 +3172,100 @@ function linkPop(anchor, t) {
   });
 }
 
+// Recently opened tickers, newest first. The symbol box shows them, and they come first in the suggestions.
+const RECENT_KEY = 'multichart-recent-v1';
+function recentSyms() {
+  let r = [];
+  try { r = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch (e) {}
+  if (!r.length) tabs.forEach(tab => leaves(tab.root || null).forEach(c => { if (c.sym && c.kind !== 'watch' && !r.includes(c.sym)) r.push(c.sym); }));
+  return r.filter(x => typeof x === 'string').slice(0, 16);
+}
+function noteRecent(sym) {
+  const r = [sym, ...recentSyms().filter(x => x !== sym)].slice(0, 16);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(r)); } catch (e) {}
+}
+// Suggestions while typing: tickers you already use first, then Schwab's list of every symbol (by ticker, and by
+// company name from three letters), with big exchanges before OTC.
+const symNames = {}, symFound = new Map();
+function knownSyms() {
+  const out = [...recentSyms()];
+  const add = x => { if (x && !out.includes(x)) out.push(x); };
+  tabs.forEach(tab => leaves(tab.root || null).forEach(c => add(c.sym)));
+  wlists.forEach(l => l.syms.forEach(add));
+  PICKS.forEach(add);
+  return out;
+}
+async function findSyms(q) {
+  if (dataCfg.mode !== 'schwab' || !q) return [];
+  if (symFound.has(q)) return symFound.get(q);
+  const pat = q.length === 1 ? q + '.?.?' : q.replace(/\./g, '\\.') + '.*';
+  const asks = /\s/.test(q) ? [] : [helper(`/instruments?symbol=${encodeURIComponent(pat)}&projection=symbol-regex`)];
+  if (q.length >= 3) asks.push(helper(`/instruments?symbol=${encodeURIComponent(q)}&projection=desc-search`));
+  const got = await Promise.allSettled(asks);
+  const seen = new Set(), list = [];
+  got.forEach(g => { if (g.status === 'fulfilled') (g.value.instruments || []).forEach(x => {
+    if (!x.symbol || seen.has(x.symbol) || /^\$|\s/.test(x.symbol)) return;
+    seen.add(x.symbol); symNames[x.symbol] = x.description || '';
+    list.push({ sym: x.symbol, big: /NASDAQ|NYSE|AMEX|ARCA|BATS|CBOE|IEX/i.test(x.exchange || ''), stock: /EQUITY|ETF/.test(x.assetType || '') });
+  }); });
+  if (got.some(g => g.status === 'fulfilled')) symFound.set(q, list);
+  return list;
+}
+function rankSyms(q, found) {
+  const known = knownSyms(), score = x => {
+    const k = known.indexOf(x.sym);
+    return (x.sym === q ? 0 : 1e6) + (x.sym.startsWith(q) ? 0 : 1e5) + (k >= 0 ? k : 1e3 + (x.stock ? 0 : 1e4) + (x.big ? 0 : 5e3) + x.sym.length * 100);
+  };
+  const all = new Map();
+  known.filter(x => x.startsWith(q)).forEach(x => all.set(x, { sym: x, big: true, stock: true }));
+  found.forEach(x => { if (!all.has(x.sym)) all.set(x.sym, x); });
+  return [...all.values()].sort((a, b) => score(a) - score(b) || a.sym.localeCompare(b.sym)).slice(0, 8);
+}
+
 function symbolPop(anchor, t) {
+  const recent = recentSyms().slice(0, 12);
   openPop(anchor, `
     <h4>Symbol</h4>
-    <form class="symform"><input id="symInput" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="8" value="${t.cell.sym}" aria-label="Ticker symbol"><button class="btn primary" type="submit">Go</button></form>
-    <div class="picks">${PICKS.map(s => `<button data-s="${s}">${s}</button>`).join('')}</div>`, p => {
+    <form class="symform"><input id="symInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="30" value="${t.cell.sym}" aria-label="Ticker or company name"><button class="btn primary" type="submit">Go</button></form>
+    <div class="sugg" hidden></div>
+    ${recent.length ? `<h4>Recent</h4><div class="picks">${recent.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}`, p => {
+    const input = p.querySelector('input'), box = p.querySelector('.sugg');
     const set = sym => { sym = sym.trim().toUpperCase().replace(/[^A-Z0-9.\/]/g, ''); if (!sym) return; setSymbol(t, sym); closePop(); };
-    p.querySelector('form').onsubmit = e => { e.preventDefault(); set(p.querySelector('input').value); };
-    p.querySelectorAll('[data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
-    if (matchMedia('(pointer: fine)').matches) p.querySelector('input').select();
+    let rows = [], hi = -1, typed = false, ask = 0, timer = 0;
+    const paint = () => {
+      box.hidden = !rows.length;
+      box.innerHTML = rows.map((x, i) => `<button type="button" data-s="${esc(x.sym)}" class="${i === hi ? 'hi' : ''}"><b>${esc(x.sym)}</b><span>${esc(symNames[x.sym] || '')}</span></button>`).join('');
+      box.querySelectorAll('[data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
+    };
+    const suggest = () => {
+      const raw = input.value.trim().toUpperCase().replace(/\s+/g, ' '), q = /\s/.test(raw) ? raw : raw.replace(/[^A-Z0-9.\/]/g, '');
+      typed = true; hi = -1;
+      if (!q) { rows = []; return paint(); }
+      rows = rankSyms(q, symFound.get(q) || []); paint();
+      clearTimeout(timer);
+      const me = ++ask;
+      timer = setTimeout(() => findSyms(q).then(found => { if (me === ask) { rows = rankSyms(q, found); paint(); } }).catch(() => {}), 180);
+    };
+    input.addEventListener('input', suggest);
+    input.addEventListener('keydown', e => {
+      if (!rows.length || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+      e.preventDefault();
+      if (e.key === 'ArrowDown') hi = hi + 1 >= rows.length ? -1 : hi + 1;
+      else hi = hi - 1 < -1 ? rows.length - 1 : hi - 1;
+      paint();
+    });
+    // Enter takes the highlighted suggestion, or the top one when what was typed is a company name, not a ticker.
+    p.querySelector('form').onsubmit = e => {
+      e.preventDefault();
+      const q = input.value.trim().toUpperCase();
+      if (hi >= 0 && rows[hi]) return set(rows[hi].sym);
+      if (rows[0] && !rows.some(x => x.sym === q) && !rows[0].sym.startsWith(q)) return set(rows[0].sym);
+      set(q);
+    };
+    p.querySelectorAll('.picks [data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
+    // The ticker starts highlighted, so typing replaces it.
+    input.focus(); input.setSelectionRange(0, input.value.length);
+    setTimeout(() => { if (!typed && document.activeElement === input) input.setSelectionRange(0, input.value.length); }, 60);
   });
 }
 
@@ -3280,7 +3371,7 @@ const GUIDE = [
     ['−  Auto  +', 'Makes the whole app smaller or bigger. Tap the middle to go back to <b>Auto</b>.']
   ] },
   { t: 'A chart panel', p: 'The header across the top of every chart:', d: [
-    ['SPY ▾', 'The ticker. Tap it to type a new one or pick a recent one.'],
+    ['SPY ▾', 'The ticker. Tap it and just start typing: the old one is highlighted, and matching tickers show up as you type (with Schwab connected, every listed and OTC symbol, also by company name). Your recent tickers are below.'],
     ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all.'],
     ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
     ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 20Y for daily and weekly.'],
