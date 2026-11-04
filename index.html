@@ -219,6 +219,9 @@ html.nobar .showbar { display: inline-flex; }
   font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0; color: var(--muted);
 }
 .link.on { border: 0; color: #fff; }
+.lgrid { display: grid; grid-template-columns: repeat(6, 34px); gap: 6px; padding: 4px 6px 6px; }
+.lgrid button { height: 34px; border: 0; border-radius: 6px; color: #fff; font-weight: 700; font-size: 13px; padding: 0; }
+.lgrid button[aria-current=true] { outline: 2px solid var(--fg); outline-offset: 2px; }
 .last { font-size: 15px; font-weight: 700; white-space: nowrap; }
 /* Short sale restriction and trading halt markers in the panel header. */
 .ssr, .haltb { flex: none; font-family: var(--ui); font-weight: 800; color: #fff; background: #d81e2c; border-radius: 3px; line-height: 1; }
@@ -657,7 +660,7 @@ const BASE = { SPY: 580, QQQ: 505, IWM: 225, DIA: 425, AAPL: 232, MSFT: 425, NVD
 const NAMES = { SPY: 'SPDR S&P 500 ETF', QQQ: 'Invesco QQQ Trust', IWM: 'iShares Russell 2000', DIA: 'SPDR Dow Jones ETF', AAPL: 'Apple Inc', MSFT: 'Microsoft Corp', NVDA: 'NVIDIA Corp', TSLA: 'Tesla Inc', AMZN: 'Amazon.com Inc', META: 'Meta Platforms', GOOGL: 'Alphabet Inc', AMD: 'Advanced Micro Devices', GLD: 'SPDR Gold Shares', UWMC: 'UWM Holdings', IAUX: 'i-80 Gold Corp', HGRAF: 'HighGold Mining' };
 const PICKS = ['SPY', 'QQQ', 'IWM', 'AAPL', 'NVDA', 'TSLA', 'AMD', 'META', 'GLD', 'UWMC', 'IAUX', 'HGRAF'];
 const VENUES = ['NSDQ', 'ARCA', 'NYSE', 'EDGX', 'BATS', 'IEX', 'MEMX', 'CBOE', 'MF/MM', 'OTC OTH', 'CHXE'];
-const LINK_COLORS = ['', '#e0a526', '#2fa7e0', '#e8644f', '#2fae5d', '#9b6cf0'];
+const LINK_COLORS = ['', '#e0a526', '#2fa7e0', '#e8644f', '#2fae5d', '#9b6cf0', '#e05fa8', '#1fb5a6', '#a8b820', '#f0832f', '#5b7cf5', '#b5835a', '#7f8fa6'];
 
 function rng(seed) {
   return () => {
@@ -1715,11 +1718,12 @@ function pickTicker(t, sym) {
 
 /* ---------- Auto watchlist from the daily SSS report ---------- */
 // The SSS report's tickers are copied into reports/sss.json next to this page: each report is
-// { id, date, label, tickers }, where a ticker is just its symbol ("ONEG") or { ticker, score, section }.
+// { id, date, label, tickers, scan }, where a ticker is just its symbol ("ONEG") or { ticker, score, section },
+// and scan holds the symbols of the report's small cap and low float gainers scan.
 // The public file carries symbols only, in the report's own order. A list with "auto" settings replaces
 // its tickers with the chosen report's and checks for a newer report every few minutes.
 const AUTO_SRC = 'reports/sss.json', AUTO_SECT = { main: 'Main', t2: 'T+2', subpar: 'Subpar' }, AUTO_ORDER = ['main', 't2', 'subpar'];
-const AUTO_PICKS = { latest: 'Newest report', Morning: 'Newest Morning report', 'Night Before': 'Newest Night Before report' };
+const AUTO_PICKS = { latest: 'Newest day (Morning + Night Before)', Morning: 'Newest Morning report', 'Night Before': 'Newest Night Before report' };
 let autoReports = null, autoErr = '', autoAt = 0, autoBusy = false;
 const autoKey = l => [l.auto.rid || '', Object.entries(l.auto.meta || {}).map(([k, v]) => k + v.join(':')).join()].join('/');
 function autoTag(l, sym) {
@@ -1738,13 +1742,24 @@ function autoReport(l) {
   const p = l.auto.pick || 'latest';
   return p === 'latest' ? autoReports[0] : autoReports.find(r => r.id === p || r.label === p) || autoReports[0];
 }
+// The reports a list draws from: "Newest day" takes the newest report and, once that day's Morning report is in,
+// the Night Before report of the same day too (Morning first).
+function autoSources(l) {
+  const r = autoReport(l);
+  if (!r) return [];
+  if ((l.auto.pick || 'latest') !== 'latest') return [r];
+  return [r, ...autoReports.filter(x => x !== r && String(x.id).slice(0, 8) === String(r.id).slice(0, 8))];
+}
 // Fill one auto list from the report it follows. Returns true when its tickers changed.
 function fillAuto(l) {
-  const r = autoReport(l);
+  const srcs = autoSources(l), r = srcs[0];
   if (!r) return false;
   const sec = l.auto.sec && l.auto.sec.length ? l.auto.sec : AUTO_ORDER, seen = new Set(), meta = {};
-  const rows = r.tickers.map(x => typeof x === 'string' ? { ticker: x } : x).filter(x => x && x.ticker && sec.includes(x.section || 'main'))
-    .sort((a, b) => AUTO_ORDER.indexOf(a.section || 'main') - AUTO_ORDER.indexOf(b.section || 'main') || (b.score || 0) - (a.score || 0));
+  const rows = [];
+  srcs.forEach(src => rows.push(...src.tickers.map(x => typeof x === 'string' ? { ticker: x } : x).filter(x => x && x.ticker && sec.includes(x.section || 'main'))
+    .sort((a, b) => AUTO_ORDER.indexOf(a.section || 'main') - AUTO_ORDER.indexOf(b.section || 'main') || (b.score || 0) - (a.score || 0))));
+  // Then every name from the small cap and low float gainers scan, unless switched off.
+  if (l.auto.scan !== false) srcs.forEach(src => (Array.isArray(src.scan) ? src.scan : []).forEach(x => rows.push({ ticker: x, section: 'scan' })));
   const syms = [];
   rows.forEach(x => {
     const s = parseSyms(x.ticker)[0];
@@ -1753,10 +1768,11 @@ function fillAuto(l) {
     if (x.score > 0) meta[s] = [Math.round(+x.score), x.section || 'main'];
   });
   const was = l.auto.rid, changed = syms.join() !== l.syms.join() || JSON.stringify(meta) !== JSON.stringify(l.auto.meta || {});
-  Object.assign(l.auto, { rid: r.id, label: r.label, date: r.date, meta });
+  const label = srcs.length > 1 ? srcs.map(x => x.label).join(' + ') : r.label;
+  Object.assign(l.auto, { rid: srcs.map(x => x.id).join('+'), label, date: r.date, meta });
   l.syms = syms;
-  if (was && was !== r.id) toast(`${esc(l.name)} now follows the ${esc(r.label)} ${esc(r.date)} report: ${syms.length} ticker${syms.length === 1 ? '' : 's'}.`);
-  return changed || was !== r.id;
+  if (was && was !== l.auto.rid) toast(`${esc(l.name)} now follows the ${esc(label)} ${esc(r.date)} report${srcs.length > 1 ? 's' : ''}: ${syms.length} ticker${syms.length === 1 ? '' : 's'}.`);
+  return changed || was !== l.auto.rid;
 }
 async function fetchReports(force) {
   if (autoBusy || (!force && !wlists.some(l => l.auto))) return;
@@ -1786,12 +1802,14 @@ function autoPop(anchor, t) {
   const recent = (autoReports || []).slice(0, 6), hasSec = recent.some(r => r.tickers.some(x => x && x.section));
   openPop(anchor, `
     <h4>${esc(l.name)}</h4>
-    <p class="note">This list fills itself with the tickers mentioned in your daily SSS report, in the report's order.</p>
+    <p class="note">This list fills itself with the tickers mentioned in your daily SSS report, in the report's order, then the small cap and low float gainers from the scan at the bottom.</p>
     <div class="menu">${Object.entries(AUTO_PICKS).map(([k, v]) => `<button data-p="${esc(k)}" aria-current="${(a.pick || 'latest') === k}"><span>${v}</span></button>`).join('')}
       ${recent.map(r => `<button data-p="${esc(r.id)}" aria-current="${a.pick === r.id}"><span>${esc(r.label)} ${esc(r.date)} <small>${r.tickers.length} tickers</small></span></button>`).join('')}</div>
     <hr>
     ${hasSec ? `<div class="menu">${AUTO_ORDER.map(k => `<button data-sec="${k}"><span>${AUTO_SECT[k]} section</span><span class="check ${sec.includes(k) ? 'on' : ''}"></span></button>`).join('')}</div>
     <hr>` : ''}
+    <div class="menu"><button data-a="scan"><span>Small cap / low float scan <small>adds the gainers from the bottom of the report</small></span><span class="check ${a.scan !== false ? 'on' : ''}"></span></button></div>
+    <hr>
     <div class="menu"><button data-a="now"><span>Check for a new report now</span></button>
       <button data-a="plain"><span>Make it a normal list <small>keeps these tickers and stops updating</small></span></button></div>
     <p class="note">${autoErr ? esc(autoErr) + ' ' : ''}Tickers you add or remove here are replaced when the next report comes in.</p>`, p => {
@@ -1805,6 +1823,7 @@ function autoPop(anchor, t) {
       p.querySelectorAll('[data-sec]').forEach(x => x.querySelector('.check').classList.toggle('on', a.sec.includes(x.dataset.sec)));
       redo();
     });
+    p.querySelector('[data-a=scan]').onclick = e => { a.scan = a.scan === false; e.currentTarget.querySelector('.check').classList.toggle('on', a.scan); redo(); };
     p.querySelector('[data-a=now]').onclick = () => { closePop(); fetchReports(true).then(() => toast(autoErr ? esc(autoErr) : `Checked: newest is ${esc(autoReports[0].label)} ${esc(autoReports[0].date)}.`, !!autoErr)); };
     p.querySelector('[data-a=plain]').onclick = () => { delete l.auto; closePop(); saveLists(); paintLists(); };
   });
@@ -2873,7 +2892,7 @@ function fromPreset(shape) {
 }
 function freeLink(extra = new Set()) {
   const used = new Set([...allCells().map(c => c.link), ...extra].filter(Boolean));
-  for (let g = 1; g <= 5; g++) if (!used.has(g)) return g;
+  for (let g = 1; g < LINK_COLORS.length; g++) if (!used.has(g)) return g;
   return 1;
 }
 
@@ -2943,6 +2962,7 @@ const grid = document.getElementById('grid');
 let editing = false;
 let noTabs = false;  // the main window, when every tab is open in a window of its own
 function render() {
+  followTabScale();
   grid.textContent = '';
   if (noTabs) {
     for (const [id, t] of tiles) { t.destroy(); tiles.delete(id); }
@@ -3273,9 +3293,8 @@ function typePop(anchor, t) {
 function linkPop(anchor, t) {
   openPop(anchor, `
     <h4>Link group</h4>
-    <div class="menu">
-      ${[0, 1, 2, 3, 4, 5].map(g => `<button data-g="${g}" aria-current="${(t.cell.link || 0) === g}"><span>${g ? 'Group ' + g : 'Not linked'}</span>${g ? `<span class="link on" style="background:${LINK_COLORS[g]}">${g}</span>` : ''}</button>`).join('')}
-    </div>
+    <div class="menu"><button data-g="0" aria-current="${!t.cell.link}"><span>Not linked</span></button></div>
+    <div class="lgrid">${LINK_COLORS.slice(1).map((c, i) => `<button data-g="${i + 1}" aria-current="${t.cell.link === i + 1}" aria-label="Group ${i + 1}" style="background:${c}">${i + 1}</button>`).join('')}</div>
     <p class="note">${t.kind === 'watch' ? 'Tapping a ticker in this watchlist opens it on every panel in the same group.' : 'Panels in the same group always show the same symbol.'}</p>`, p => {
     p.querySelectorAll('[data-g]').forEach(b => b.onclick = () => {
       const g = +b.dataset.g;
@@ -3483,11 +3502,11 @@ const GUIDE = [
     ['Full / Charts only', '<b>Charts only</b> hides everything except the charts. <b>Full</b> shows every panel again.'],
     ['Alerts', 'Your price alerts: see them, delete them, or clear the ones that already hit.'],
     ['Chart settings', 'Zoom style, layouts, colors, picture-in-picture, this guide and more.'],
-    ['−  Auto  +', 'Makes the whole app smaller or bigger. Tap the middle to go back to <b>Auto</b>.']
+    ['−  Auto  +', 'Makes the whole app smaller or bigger. Each tab keeps its own zoom, so zooming one tab leaves the others alone. Tap the middle to go back to <b>Auto</b>.']
   ] },
   { t: 'A chart panel', p: 'The header across the top of every chart:', d: [
     ['SPY ▾', 'The ticker. Tap it and just start typing: the old one is highlighted, and matching tickers show up as you type (with Schwab connected, every listed and OTC symbol, also by company name). Your recent tickers are below.'],
-    ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all.'],
+    ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all. There are 12 groups.'],
     ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
     ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 20Y for daily and weekly.'],
     ['5m', 'The timeframe: 1m, 2m, 5m, 15m, 30m, 1h, daily or weekly.'],
@@ -3513,7 +3532,7 @@ const GUIDE = [
     ['Level II', 'The order book: bids on the left, asks on the right, each price level in its own color. Its menu has <b>Level II options</b> (Colored or Basic style, columns, group by price) and <b>Text size</b>.'],
     ['Time & Sales', 'Each trade as it happens: green at the ask, red at the bid.'],
     ['L2 + T&S', 'Both in one box, side by side.'],
-    ['Watchlist', 'Lists of tickers with live prices. Tap a ticker to open it on the linked charts, tap + to add, tap a heading to sort. The menu picks columns and edits the list. Tap the list name and pick <b>Auto list from the daily report</b> for a list that fills itself with the SSS report\'s tickers.'],
+    ['Watchlist', 'Lists of tickers with live prices. Tap a ticker to open it on the linked charts, tap + to add, tap a heading to sort. The menu picks columns and edits the list. Tap the list name and pick <b>Auto list from the daily report</b> for a list that fills itself with the SSS report\'s tickers and the small cap / low float gainers scan. <b>Newest day</b> shows the Night Before report, and adds the Morning report as soon as it is in.'],
     ['Fundamentals', 'News, key statistics (float, short interest and more), the company profile and SEC filings.']
   ] },
   { t: 'Tabs, windows and the desktop app', p: 'Ways to spread out:', d: [
@@ -3626,9 +3645,21 @@ function renderZoom() {
 
 /* ---------- app zoom ---------- */
 // "auto" picks a size from the screen width; a number is the user's own zoom level.
-const SCALE_KEY = 'multichart-scale-v1', ZMIN = 0.5, ZMAX = 2;
-let scalePref = 'auto';
-try { const v = JSON.parse(localStorage.getItem(SCALE_KEY)); if (v === 'auto' || typeof v === 'number') scalePref = v; } catch (e) {}
+// Each tab keeps its own zoom (TAB_SCALE_KEY, by tab id). The older single zoom (SCALE_KEY) is the
+// starting zoom for tabs that haven't been zoomed yet. Zoom stays each device's own.
+const SCALE_KEY = 'multichart-scale-v1', TAB_SCALE_KEY = 'multichart-scale-tabs-v1', ZMIN = 0.5, ZMAX = 2;
+const okScale = v => v === 'auto' || (typeof v === 'number' && v >= ZMIN && v <= ZMAX);
+let baseScale = 'auto', tabScales = {};
+try { const v = JSON.parse(localStorage.getItem(SCALE_KEY)); if (okScale(v)) baseScale = v; } catch (e) {}
+try { const v = JSON.parse(localStorage.getItem(TAB_SCALE_KEY)); if (v && typeof v === 'object') tabScales = v; } catch (e) {}
+// The tab on screen in this window (none when every tab is popped out).
+function scaleTab() { return !noTabs && tabs[activeTab] ? tabs[activeTab].id : null; }
+function prefFor(id) { return id && okScale(tabScales[id]) ? tabScales[id] : baseScale; }
+let scalePref = prefFor(scaleTab());
+function saveTabScales() {
+  for (const id of Object.keys(tabScales)) if (!tabs.some(t => t.id === id)) delete tabScales[id];  // closed tabs
+  try { localStorage.setItem(TAB_SCALE_KEY, JSON.stringify(tabScales)); } catch (e) {}
+}
 function autoScale() {
   const w = Math.min(innerWidth, screen.width || innerWidth);
   return w < 380 ? 0.85 : w < 520 ? 0.92 : w < 1700 ? 1 : w < 2300 ? 1.15 : 1.3;
@@ -3637,12 +3668,25 @@ function uiScale() { return scalePref === 'auto' ? autoScale() : scalePref; }
 function chartFont() { return Math.round(11 * uiScale()); }
 function setScale(v) {
   scalePref = v === 'auto' ? 'auto' : Math.round(Math.max(ZMIN, Math.min(ZMAX, v)) * 10) / 10;
-  try { localStorage.setItem(SCALE_KEY, JSON.stringify(scalePref)); } catch (e) {}
+  const id = scaleTab();
+  if (id) { tabScales[id] = scalePref; saveTabScales(); }
+  else { baseScale = scalePref; try { localStorage.setItem(SCALE_KEY, JSON.stringify(baseScale)); } catch (e) {} }
   applyScale();
 }
-function applyScale() {
-  document.documentElement.style.setProperty('--scale', uiScale());
+// Sets the page and chart text to the current zoom. Returns true if it changed.
+let paintedScale = null;
+function paintScale() {
+  const s = uiScale();
+  if (s === paintedScale) return false;
+  paintedScale = s;
+  document.documentElement.style.setProperty('--scale', s);
   tiles.forEach(t => { if (t.chart) { [t.chart, t.vchart].forEach(c => c && c.applyOptions({ layout: { fontSize: chartFont() } })); t.markKey = null; } });
+  return true;
+}
+// Picks up the zoom of the tab now on screen (after switching, opening or closing tabs).
+function followTabScale() { scalePref = prefFor(scaleTab()); paintScale(); }
+function applyScale() {
+  paintScale();
   closePop();
   renderTabs();
 }
@@ -3759,6 +3803,8 @@ function newTab(copyFrom) {
     tab.root = JSON.parse(JSON.stringify(copyFrom.root));
     leaves(tab.root).forEach(c => { c.id = pid(); });
   }
+  const from = copyFrom ? prefFor(copyFrom.id) : scalePref;
+  if (from !== baseScale) { tabScales[tab.id] = from; saveTabScales(); }
   tabs.push(tab);
   activeTab = tabs.length - 1; state = tab; noTabs = false;
   if (!tab.root) state.root = fromPreset(['cc', 'cc']);
@@ -4227,7 +4273,7 @@ function openData() {
 document.getElementById('feedBtn').addEventListener('click', () => { reviveStream(true); if (sheet.hidden || sheet.dataset.kind !== 'data') openData(); else sheet.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') sheet.hidden = true; });
 applyColors();
-document.documentElement.style.setProperty('--scale', uiScale());
+paintScale();
 
 /* ---------- picture-in-picture ---------- */
 // Chrome and Edge on a computer can float a whole page. There the app opens again inside an
@@ -4578,7 +4624,8 @@ addEventListener('storage', e => {
     case DRAW_KEY: drawings = j && typeof j === 'object' ? j : {}; charts(); break;
     case WL_KEY: if (j && Array.isArray(j.lists)) { wlists = j.lists.filter(l => l && l.id && Array.isArray(l.syms)); paintLists(); } break;
     case COLOR_KEY: colors = j && typeof j === 'object' ? j : {}; applyColors(); break;
-    case SCALE_KEY: if (j === 'auto' || typeof j === 'number') { scalePref = j; applyScale(); } break;
+    case SCALE_KEY: if (okScale(j)) { baseScale = j; scalePref = prefFor(scaleTab()); applyScale(); } break;
+    case TAB_SCALE_KEY: tabScales = j && typeof j === 'object' ? j : {}; scalePref = prefFor(scaleTab()); applyScale(); break;
     case SAVED_KEY: savedLayouts = Array.isArray(j) ? j : []; break;
     case SSR_KEY: case HALT_KEY: setMarker(e.key, e.newValue === '1'); break;
     case ZOOM_KEY: zoomMode = e.newValue === 'highlight' ? 'highlight' : 'pinch'; tiles.forEach(t => t.chart && t.applyZoomMode()); break;
@@ -4593,7 +4640,7 @@ let installAsk = null;
 // The desktop setup travels through your Schwab helper: the main desktop window saves its layout and settings
 // there when it closes (and every few minutes while open), and any device can open it from Chart settings.
 // The connection (helper address and password) and the zoom stay each device's own.
-const SETUP_SKIP = ['multichart-data-v1', 'multichart-scale-v1'];
+const SETUP_SKIP = ['multichart-data-v1', 'multichart-scale-v1', 'multichart-scale-tabs-v1'];
 function setupData() {
   save();
   const all = {};
