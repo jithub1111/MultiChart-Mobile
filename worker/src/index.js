@@ -291,6 +291,42 @@ async function route(req, env, url) {
     }
     return json({ secContact: await env.TOKENS.get(SEC_KEY) || '' });
   }
+  // The desktop app's last layout and settings, saved when it closes, so another device can open the same setup.
+  if (p === '/setup') {
+    if (req.method === 'POST') {
+      const text = await req.text();
+      if (text.length > 4e6) throw new Fail('That setup is too large to save.', 413, 'size');
+      let body;
+      try { body = JSON.parse(text); } catch (e) { throw new Fail('That setup could not be read.', 400, 'setup'); }
+      if (!body || typeof body.data !== 'object' || !body.data) throw new Fail('That setup is empty.', 400, 'setup');
+      const data = Object.fromEntries(Object.entries(body.data).filter(([k, v]) => /^multichart-[\w-]+$/.test(k) && typeof v === 'string'));
+      // The save it replaces moves into a short history (newest first), so a mistake can be undone. A save
+      // identical to the last one changes nothing.
+      const prevText = await env.TOKENS.get('setup:last');
+      const prev = prevText ? JSON.parse(prevText) : null;
+      if (prev && JSON.stringify(prev.data) === JSON.stringify(data)) return json({ saved: true, same: true });
+      if (prev && prev.at) {
+        await env.TOKENS.put('setup:old:' + prev.at, prevText, { expirationTtl: 30 * 86400 });
+        const hist = [prev.at, ...JSON.parse(await env.TOKENS.get('setup:hist') || '[]').filter(t => t !== prev.at)];
+        for (const t of hist.slice(SETUP_KEEP)) await env.TOKENS.delete('setup:old:' + t);
+        await env.TOKENS.put('setup:hist', JSON.stringify(hist.slice(0, SETUP_KEEP)));
+      }
+      await env.TOKENS.put('setup:last', JSON.stringify({ at: Date.now(), from: String(body.from || '').slice(0, 60), data }));
+      return json({ saved: true });
+    }
+    // ?list=1 gives the times of the earlier saves; ?at=<time> gives one of them.
+    if (url.searchParams.get('list')) {
+      const hist = JSON.parse(await env.TOKENS.get('setup:hist') || '[]');
+      const last = JSON.parse(await env.TOKENS.get('setup:last') || 'null');
+      return json({ last: last ? last.at : 0, earlier: hist });
+    }
+    const at = url.searchParams.get('at');
+    if (at) {
+      if (!/^\d{1,15}$/.test(at)) throw new Fail('Odd setup time.', 400, 'setup');
+      return json(JSON.parse(await env.TOKENS.get('setup:old:' + at) || 'null') || { at: 0 });
+    }
+    return json(JSON.parse(await env.TOKENS.get('setup:last') || 'null') || { at: 0 });
+  }
   if (p === '/pricehistory' || p === '/quotes' || p === '/instruments') return json(await schwab(env, `/marketdata/v1${p}${url.search}`));
   const sym = (url.searchParams.get('symbol') || '').toUpperCase().trim();
   if ((p === '/news' || p === '/company' || p === '/float') && !/^[A-Z0-9.\/^-]{1,12}$/.test(sym)) throw new Fail('Missing or odd symbol.', 400, 'symbol');
@@ -299,6 +335,8 @@ async function route(req, env, url) {
   if (p === '/float') return json(await floatData(env, sym));
   throw new Fail('Not found', 404, 'notfound');
 }
+
+const SETUP_KEEP = 20; // earlier desktop setups kept for undo
 
 export default {
   async fetch(req, env) {

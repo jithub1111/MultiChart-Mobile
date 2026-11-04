@@ -35,6 +35,7 @@
   --ext: #9aa4b0;
   --pop: #171b21;
   --chart-bg: #0b0d10;
+  --halt-bg: #5a0c14;
   --l2-1: #f5d90a; --l2-2: #35c46a; --l2-3: #3aa0ff; --l2-4: #ff7eb6; --l2-5: #b98cff; --l2-6: #8f9aa6;
   --l2-text: #050608;
   --ts-buy: #23c26b; --ts-sell: #f2545b; --ts-mid: #e4e8ec;
@@ -219,6 +220,10 @@ html.nobar .showbar { display: inline-flex; }
 }
 .link.on { border: 0; color: #fff; }
 .last { font-size: 15px; font-weight: 700; white-space: nowrap; }
+/* Short sale restriction and trading halt markers in the panel header. */
+.ssr, .haltb { flex: none; font-family: var(--ui); font-weight: 800; color: #fff; background: #d81e2c; border-radius: 3px; line-height: 1; }
+.ssr { font-size: 11px; padding: 2px 4px; margin-right: -2px; }
+.haltb { font-size: 9.5px; padding: 3px 4px; letter-spacing: .04em; }
 .last.up { color: var(--up); } .last.down { color: var(--down); }
 .stack { display: grid; font-size: 10.5px; line-height: 1.2; white-space: nowrap; }
 .chg.up { color: var(--up); } .chg.down { color: var(--down); }
@@ -253,6 +258,14 @@ html.nobar .showbar { display: inline-flex; }
   font-family: var(--num); font-size: 11px; color: var(--muted);
 }
 .legend b { font-weight: 500; color: var(--vwap); }
+/* The candle under the crosshair: open, high, low and close, as in thinkorswim. */
+/* Sized from the app zoom directly rather than with CSS zoom, which Safari applies unevenly here (the lines overlapped). */
+.ohlc { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; display: grid; grid-template-columns: auto auto; align-items: center;
+  gap: 0 calc(8px * var(--scale)); padding: calc(3px * var(--scale)) calc(7px * var(--scale)); border-radius: 4px;
+  font-family: var(--num); font-size: max(9px, calc(11px * var(--scale))); line-height: 1.4; color: var(--muted); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
+.ohlc b { font-weight: 500; color: var(--fg); text-align: right; }
+.ohlc .up { color: var(--up); } .ohlc .down { color: var(--down); }
 
 /* Level II and Time & Sales */
 .msg { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; zoom: var(--scale); pointer-events: none; }
@@ -774,6 +787,13 @@ function bars(sym, tf) {
   const s = store(sym), k = TF[tf];
   return clean(k === 'D' ? s.daily.map(b => ({ ...b })) : k === 'W' ? aggWeekly(s.daily) : aggIntraday(s.m1, k));
 }
+// Just the newest bar of a timeframe, built from the last few minutes or days. Used on every heartbeat, so a chart
+// doesn't rebuild its whole history (thousands of bars) twice a second.
+function lastBar(sym, tf) {
+  const s = store(sym), k = TF[tf];
+  const one = k === 'D' ? s.daily.slice(-1).map(b => ({ ...b })) : k === 'W' ? aggWeekly(s.daily.slice(-6)) : aggIntraday(s.m1.slice(-k), k);
+  return clean(one).pop();
+}
 // The chart needs bars with real numbers, each later than the one before.
 function clean(list) {
   let t = -Infinity;
@@ -846,6 +866,7 @@ const SOURCE = { alpaca: 'IEX', schwab: 'Schwab' };
 // passes on what arrives. If it closes, another window takes over (see "windows" below).
 const bus = 'BroadcastChannel' in window ? new BroadcastChannel('multichart') : null;
 const post = m => { if (bus) try { bus.postMessage(m); } catch (e) {} };
+let restoring = false;  // a saved setup is being opened: nothing may write the old one back
 let leader = !(bus && navigator.locks), leaderFeed = '';
 const remote = new Map();  // the leader's record of what each other window shows
 function others() {
@@ -1179,12 +1200,12 @@ async function loadSchwab(s) {
   try {
     const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote`);
     const qt = j[s.sym] && j[s.sym].quote;
-    if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; }
+    if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; if (qt.securityStatus) s.status = String(qt.securityStatus); }
   } catch (e) {}
 }
 
 let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
-const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
+const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,32,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
 function sSend(sock, service, command, parameters) {
   sock.send(JSON.stringify({ requests: [{ requestid: String(sReq++), service, command, SchwabClientCustomerId: sInfo.schwabClientCustomerId, SchwabClientCorrelId: sInfo.schwabClientCorrelId, parameters }] }));
 }
@@ -1269,6 +1290,7 @@ function onSchwabData(d) {
       if (c[1] != null) s.qb = c[1];
       if (c[2] != null) s.qa = c[2];
       if (s.qb > 0 && s.qa >= s.qb) { s.bid = s.qb; s.ask = s.qa; }
+      if (c[32] != null) s.status = String(c[32]);  // Normal, Halted, Closed...
       // Schwab has no tape feed, so each new last-trade time becomes one print.
       const l1 = s.l1 || (s.l1 = {});
       const fresh = c[35] != null && c[35] !== l1.t;
@@ -1351,6 +1373,30 @@ function setZoomMode(m) {
   zoomMode = m;
   try { localStorage.setItem(ZOOM_KEY, m); } catch (e) {}
   tiles.forEach(t => t.chart && t.applyZoomMode());
+}
+// Optional markers (Chart settings): a red S for short sale restriction, and a red chart when trading is halted.
+const SSR_KEY = 'multichart-ssr-v1', HALT_KEY = 'multichart-halt-v1';
+let ssrOn = false, haltOn = false;
+try { ssrOn = localStorage.getItem(SSR_KEY) === '1'; haltOn = localStorage.getItem(HALT_KEY) === '1'; } catch (e) {}
+// Rule 201: once a stock trades 10% or more below the previous close during the regular session, short sales are
+// restricted for the rest of that day and all of the next session.
+function ssrOf(s) {
+  const D = s.daily, M = s.m1;
+  if (!D || D.length < 2 || !M || !M.length) return false;
+  const lt = M[M.length - 1].time, today = lt - lt % 86400, key = M.length + ':' + M[M.length - 1].low + ':' + D.length + ':' + s.prevClose;
+  if (s.ssrKey === key) return s.ssr;
+  let low = Infinity;
+  for (let i = M.length - 1; i >= 0 && M[i].time >= today; i--) { const sec = M[i].time % 86400; if (sec >= OPEN && sec < CLOSE) low = Math.min(low, M[i].low); }
+  const n = D.length, k = D[n - 1].time >= today ? n - 2 : n - 1;  // the latest finished session
+  s.ssr = s.prevClose > 0 && low <= s.prevClose * 0.9 || k >= 1 && D[k].low <= D[k - 1].close * 0.9;
+  s.ssrKey = key;
+  return s.ssr;
+}
+const isHalted = s => /halt/i.test(s.status || '');
+function setMarker(key, on) {
+  if (key === SSR_KEY) ssrOn = on; else haltOn = on;
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
+  tiles.forEach(t => t.update());
 }
 // Volume either sits under the candles (default) or gets its own strip with its own scale.
 const VOLSEP_KEY = 'multichart-volsep-v1';
@@ -1986,7 +2032,9 @@ class Tile {
         <button class="link" aria-label="Link group"></button>
         ${watch ? `<span class="spacer"></span><button class="ib wadd" aria-label="Add tickers">${ICON.plus}</button>` : `
         ${chart ? '' : '<span class="name"></span>'}
+        <span class="ssr" hidden title="Short sale restriction (SSR): the stock fell 10% below the previous close, so short sales are restricted today (and next session)">S</span>
         <span class="last"></span>
+        ${chart ? '<span class="haltb" hidden title="Trading in this stock is halted">HALTED</span>' : ''}
         <span class="stack chg"><span class="c1"></span><span class="c2"></span></span>
         <span class="stack ba"><span>B: <b class="bid"></b></span><span>A: <b class="ask"></b></span></span>
         ${chart ? `<select class="tf days" aria-label="Days shown">${DAYS.map(n => `<option value="${n}">${n}D</option>`).join('')}</select><select class="tf" aria-label="Timeframe">${Object.keys(TF).map(k => `<option>${k}</option>`).join('')}</select>` : '<span class="spacer"></span>'}
@@ -2017,7 +2065,7 @@ class Tile {
         this.fitView(); save();
       });
       const body = this.$('.body');
-      body.innerHTML = '<div class="legend"></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
+      body.innerHTML = '<div class="legend"></div><div class="ohlc" hidden></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
       this.$('.hint button').addEventListener('click', () => this.setMode(null));
       this.lines = [];
@@ -2102,19 +2150,33 @@ class Tile {
       let hl = null;
       const paneX = e => { const r = body.getBoundingClientRect(); return Math.max(0, Math.min(this.plotWidth(), e.clientX - r.left)); };
       body.addEventListener('pointerdown', e => {
-        if (hl) { hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
+        if (hl) { clearTimeout(hl.timer); hl = null; band.hidden = true; return; }  // a second finger: that is a pinch
         if (zoomMode !== 'highlight' || this.mode || e.button > 0 || e.target.closest('.hint, .zoomreset')) return;
         if (e.clientX - body.getBoundingClientRect().left > this.plotWidth()) return;  // on the price scale
-        hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e) };
+        // With a finger or pencil, dragging moves the crosshair. Holding still for a moment first starts the highlight.
+        const touch = e.pointerType !== 'mouse';
+        hl = { id: e.pointerId, x0: paneX(e), x1: paneX(e), cx: e.clientX, cy: e.clientY, armed: !touch };
+        if (touch) hl.timer = setTimeout(() => {
+          if (!hl || hl.armed) return;
+          hl.armed = true;
+          band.hidden = false; band.style.left = (hl.x1 - 1) + 'px'; band.style.width = '2px';
+          if (navigator.vibrate) try { navigator.vibrate(10); } catch (err) {}
+        }, 450);
         band.style.height = (body.clientHeight - (this.vchart || this.chart).timeScale().height()) + 'px';
         // Follow the drag over the whole window: running past the chart's edge (into the next panel,
         // say) stops the band at the edge and still zooms, as in thinkorswim.
-        addEventListener('pointermove', moveHl, true);
+        addEventListener('pointermove', moveHl, { capture: true, passive: false });
         addEventListener('pointerup', endHl, true);
         addEventListener('pointercancel', endHl, true);
       }, true);
       const moveHl = e => {
         if (!hl || e.pointerId !== hl.id) return;
+        if (!hl.armed) {
+          // Moved before the hold finished: this touch is for the crosshair.
+          if (Math.hypot(e.clientX - hl.cx, e.clientY - hl.cy) > 8) { clearTimeout(hl.timer); removeEventListener('pointermove', moveHl, true); removeEventListener('pointerup', endHl, true); removeEventListener('pointercancel', endHl, true); hl = null; }
+          return;
+        }
+        if (e.pointerType !== 'mouse' && e.cancelable) e.preventDefault();
         hl.x1 = paneX(e);
         const w = Math.abs(hl.x1 - hl.x0);
         band.hidden = w < 6;
@@ -2125,8 +2187,10 @@ class Tile {
         removeEventListener('pointermove', moveHl, true);
         removeEventListener('pointerup', endHl, true);
         removeEventListener('pointercancel', endHl, true);
-        const { x0, x1 } = hl;
+        const { x0, x1, armed } = hl;
+        clearTimeout(hl.timer);
         hl = null; band.hidden = true;
+        if (!armed) return;
         if (e.type !== 'pointerup' || Math.abs(x1 - x0) < 12) return;
         const ts = (this.vchart || this.chart).timeScale(), a = ts.coordinateToLogical(Math.min(x0, x1)), b = ts.coordinateToLogical(Math.max(x0, x1));
         if (a == null || b == null) return;
@@ -2157,6 +2221,31 @@ class Tile {
       this.applyZoomMode();
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.paintDrawings());
       this.chart.subscribeCrosshairMove(() => this.paintDrawings());
+      // The box with the candle under the crosshair. Both charts report the crosshair (the volume strip too).
+      const box = this.$('.ohlc');
+      // It floats next to the cursor (below and to the right, flipping when it would run off the chart).
+      const showBar = (src, p) => {
+        const b = p.point && p.logical != null && this.list ? this.list[Math.round(p.logical)] : null;
+        if (!b) { box.hidden = true; return; }
+        const d = dec(b.close), f = v => v.toFixed(d), cls = b.close > b.open ? 'up' : b.close < b.open ? 'down' : '';
+        box.innerHTML = `<span>O</span><b>${f(b.open)}</b><span>H</span><b>${f(b.high)}</b><span>L</span><b>${f(b.low)}</b><span>C</span><b class="${cls}">${f(b.close)}</b>`;
+        box.hidden = false;
+        // Placed from where the mouse or finger really is (followed below), else from the crosshair itself.
+        const br = body.getBoundingClientRect();
+        let x, y;
+        if (ptr) { x = ptr.x - br.left; y = ptr.y - br.top; }
+        else if (p.sourceEvent) { const cr = src.chartElement().getBoundingClientRect(); x = cr.left - br.left + p.point.x; y = cr.top - br.top + p.point.y; }
+        else return;
+        const z = 1, w = box.offsetWidth, h = box.offsetHeight, gap = 14;
+        const left = x + gap + w > this.plotWidth() ? x - gap - w : x + gap, top = y + gap + h > body.clientHeight ? y - gap - h : y + gap;
+        box.style.left = Math.max(0, left) / z + 'px'; box.style.top = Math.max(0, top) / z + 'px';
+      };
+      let ptr = null;
+      const track = e => { ptr = { x: e.clientX, y: e.clientY }; };
+      body.addEventListener('pointermove', track, true);
+      body.addEventListener('pointerdown', track, true);
+      body.addEventListener('pointerleave', () => { ptr = null; });
+      [this.chart, this.vchart].forEach(c => c && c.subscribeCrosshairMove(p => showBar(c, p)));
     } else if (watch) {
       this.$('.body').innerHTML = '<div class="wl"></div>';
       const wl = this.$('.wl');
@@ -2403,6 +2492,18 @@ class Tile {
     const a = tosLook() ? '' : '99', up = css('--up') + a, down = css('--down') + a;
     return list.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? up : down }));
   }
+  // VWAP for the newest bar: the day's earlier bars are summed once per bar, then only the newest one changes.
+  lastVwap(list) {
+    const lb = list[list.length - 1], day = Math.floor(lb.time / 86400);
+    let v = this.vwBase;
+    if (!v || v.day !== day || v.n !== list.length) {
+      v = this.vwBase = { day, n: list.length, pv: 0, vv: 0 };
+      for (let i = list.length - 2; i >= 0 && Math.floor(list[i].time / 86400) === day; i--) { const b = list[i]; v.pv += (b.high + b.low + b.close) / 3 * b.volume; v.vv += b.volume; }
+    }
+    const pv = v.pv + (lb.high + lb.low + lb.close) / 3 * lb.volume, vv = v.vv + lb.volume, pt = { time: lb.time, value: vv ? pv / vv : lb.close };
+    if (!v.vv) pt.color = 'rgba(0,0,0,0)';
+    return pt;
+  }
   // The last price's label (and line) on hollow candles, in the up, down or flat color.
   paintLastLabel() {
     const lb = this.list && this.list[this.list.length - 1];
@@ -2451,7 +2552,7 @@ class Tile {
       const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
       this.candles.applyOptions({ priceFormat: fmt });
       this.vw.applyOptions({ priceFormat: fmt });
-      this.list = list;
+      this.list = list; this.sig = '';
       this.candles.setData(this.candleData(list));
       this.paintLastLabel();
       this.volume.setData(this.volData(list));
@@ -2477,15 +2578,27 @@ class Tile {
     if (!ready(s)) return;
     const p = last(s), d = dec(p);
     if (this.kind === 'chart') {
-      const list = this.list = bars(this.cell.sym, this.cell.tf), lb = list[list.length - 1];
-      // The chart only takes a bar at or after its newest one; anything else means the history changed.
-      if (lb && lb.time < this.lastT) return this.load(true);
-      if (lb) { this.candles.update(this.candleData([lb])[0]); this.paintLastLabel(); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
-      if (this.autoFit && list.length !== this.fitN) this.refit();
+      // Most heartbeats only change the newest bar. The whole history is rebuilt only when a new bar starts.
+      let lb = lastBar(this.cell.sym, this.cell.tf), list = this.list || [];
+      if (lb && lb.time !== this.lastT) {
+        const n = list.length;
+        list = this.list = bars(this.cell.sym, this.cell.tf); lb = list[list.length - 1];
+        this.vwBase = null;
+        // The chart only takes a bar at or after its newest one, one at a time; anything else means the history changed.
+        if (lb && (lb.time < this.lastT || list.length > n + 1)) return this.load(true);
+      } else if (lb && list.length) list[list.length - 1] = lb;
+      // The chart redraws its whole series for every change it's handed, so a bar that hasn't moved since the last
+      // heartbeat (quiet tickers, most of the day) isn't handed over again.
+      const sig = lb ? [lb.time, lb.open, lb.high, lb.low, lb.close, lb.volume, this.showVwap].join() : '';
+      if (sig !== this.sig) {
+        this.sig = sig;
+        if (lb) { this.candles.update(this.candleData([lb])[0]); this.paintLastLabel(); this.volume.update(this.volData([lb])[0]); this.lastT = lb.time; }
+        if (this.autoFit && list.length !== this.fitN) this.refit();
+        const lg = this.$('.legend');
+        if (this.showVwap && lb) { const lv = this.lastVwap(list); this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
+        else lg.innerHTML = '';
+      }
       this.alignScales();
-      const lg = this.$('.legend');
-      if (this.showVwap && lb) { const v = vwap(list), lv = v[v.length - 1]; this.vw.update(lv); lg.innerHTML = `VWAP <b>${lv.value.toFixed(d)}</b>`; }
-      else lg.innerHTML = '';
       this.watermark();
       this.paintDrawings();
     } else if (this.kind !== 'fund') {
@@ -2502,9 +2615,20 @@ class Tile {
     this.$('.chg').className = 'stack chg ' + cls;
     this.$('.bid').textContent = s.bid.toFixed(d);
     this.$('.ask').textContent = s.ask.toFixed(d);
+    this.$('.ssr').hidden = !(ssrOn && ssrOf(s));
+    if (this.chart) {
+      const h = haltOn && isHalted(s);
+      this.$('.haltb').hidden = !h;
+      if (h !== !!this.halted) {
+        this.halted = h;
+        const bg = { layout: { background: { type: 'solid', color: h ? css('--halt-bg') : css('--chart-bg') } } };
+        [this.chart, this.vchart].forEach(c => c && c.applyOptions(bg));
+      }
+    }
   }
   retheme() {
     if (!this.chart) return;
+    this.halted = false;  // the colors below reset the background; the next update turns it red again if needed
     this.chart.applyOptions(chartColors());
     if (this.vchart) { this.vchart.applyOptions(chartColors()); this.vshade.redraw(); }
     this.candles.applyOptions(candleColors());
@@ -2665,6 +2789,15 @@ const READY = [{
     [['QSI', '5m', 3], ['SAIQ', '15m', 10], ['AIOK', '1m', 10], ['NUAI', '1m', 10]],
     [['USO', '5m', 2], ['CHSN', '1m', 10], ['PSRHF', '1m', 5], ['TPET', '2m', 5]]
   ]
+}, {
+  // /BTC futures aren't available, so IBIT stands in for it.
+  name: '16 charts (my thinkorswim grid)',
+  rows: [
+    [['GLD', 'D', '1Y'], ['IBIT', 'D', '1Y'], ['BTCS', '1m', 10], ['BTCT', '2m', 5]],
+    [['GLGDF', '5m', 10], ['USO', '1m', 10], ['RIOFF', '1m', 10], ['CYPH', 'D', '1Y']],
+    [['DSVSF', '1m', 10], ['RIOFF', '1m', 10], ['CELU', 'D', '1Y'], ['USDE', '2m', 3]],
+    [['ABBRF', '5m', 10], ['FTFT', '1m', 10], ['NLST', 'D', '1Y'], ['VRA', '1m', 10]]
+  ]
 }];
 // Every chart gets the same share of the screen.
 function fromReady(r) {
@@ -2777,6 +2910,7 @@ function pid() {
 }
 
 function save() {
+  if (restoring) return;
   try {
     localStorage.setItem(TABS_KEY, JSON.stringify({ tabs, active: popTab ? savedActive : activeTab }));
     if (!popTab) localStorage.setItem(KEY, JSON.stringify(state));
@@ -3202,14 +3336,18 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-zoom="pinch" aria-current="${zoomMode === 'pinch'}"><span>Pinch to zoom <small>drag to scroll</small></span><span class="check ${zoomMode === 'pinch' ? 'on' : ''}"></span></button>
       <button data-zoom="highlight" aria-current="${zoomMode === 'highlight'}"><span>Highlight to zoom <small>drag across a chart</small></span><span class="check ${zoomMode === 'highlight' ? 'on' : ''}"></span></button>
     </div>
-    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it, and use the scroll wheel to move through time. Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
+    <p class="note">${zoomMode === 'highlight' ? 'Drag across part of a chart to zoom into it, and use the scroll wheel to move through time. On a touchscreen, hold your finger still for a moment and then drag (a quick drag just moves the crosshair). Tap <b>Whole day</b> on the chart to go back.' : 'Pinch to zoom and drag to scroll back in time.'}</p>
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
+      <button data-a="ssr"><span>SSR indicator <small>red S by the price when short sales are restricted</small></span><span class="check ${ssrOn ? 'on' : ''}"></span></button>
+      <button data-a="halt"><span>Halt indicator <small>chart turns red while the stock is halted</small></span><span class="check ${haltOn ? 'on' : ''}"></span></button>
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
       <button data-a="layout"><span>Layouts <small>presets and saved</small></span></button>
       <button data-a="colors"><span>Colors</span></button>
       <button data-a="guide"><span>Guide <small>what each button does</small></span></button>
+      <button data-a="desk"><span>Open last desktop setup <small>layout and settings saved when the computer app closed</small></span></button>
+      <button data-a="undo"><span>Undo setup changes <small>go back to an earlier autosave</small></span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
     </div>`, p => {
@@ -3218,6 +3356,13 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
+    p.querySelector('[data-a=desk]').onclick = () => openDeskSetup();
+    p.querySelector('[data-a=undo]').onclick = () => openSetupHistory();
+    p.querySelector('[data-a=ssr]').onclick = () => { closePop(); setMarker(SSR_KEY, !ssrOn); };
+    p.querySelector('[data-a=halt]').onclick = () => {
+      closePop(); setMarker(HALT_KEY, !haltOn);
+      if (haltOn && dataCfg.mode !== 'schwab') toast('Halts come from Schwab\'s live data, so the halt indicator works with Schwab connected.');
+    };
     p.querySelector('[data-a=rotate]').onclick = () => {
       rotateOn = !rotateOn; closePop();
       try { localStorage.setItem(ROTATE_KEY, rotateOn ? '1' : '0'); } catch (e) {}
@@ -3260,7 +3405,7 @@ const GUIDE = [
   ] },
   { t: 'Moving around a chart', p: 'The chart works with fingers, a mouse or a trackpad.', d: [
     ['Drag', 'Scroll back in time (with pinch to zoom). The price and time scales can be dragged too.'],
-    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead.'],
+    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead (on a touchscreen, hold for a moment first). A small box next to the crosshair shows the open, high, low and close of the candle under it.'],
     ['Double-tap', 'Zooms all the way out over everything loaded, as in thinkorswim. The button on the chart goes back.'],
     ['Crosshair', 'Follows your finger or mouse and shows the price and time under it, on the volume strip too.'],
     ['Tap a price', 'Tap the price scale to set an alert there. When it hits, a pop-up shows and the app beeps.']
@@ -3301,7 +3446,9 @@ const GUIDE = [
     ['Setup link', '<b>Copy setup link</b> turns live data on in one tap on another device. It carries your password, so only send it to yourself.'],
     ['Move setup', '<b>Copy all my settings</b> and <b>Load settings</b> carry your tabs, layouts, colors and lists to another device or the Home Screen app.'],
     ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
-    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.']
+    ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.'],
+    ['SSR and halts', 'Turn on the <b>SSR indicator</b> for a red S by the price when a stock is under the short sale restriction (it fell 10% below the previous close today or yesterday). The <b>Halt indicator</b> turns the chart red with a HALTED tag while Schwab reports the stock as halted.'],
+    ['Desktop setup', 'With Schwab connected, the computer app saves its layout and settings to your helper when you close it (and every few minutes). On any other device, <b>Chart settings → Open last desktop setup</b> brings the same tabs, layouts, watchlists, colors, drawings and alerts over. Each device keeps its own connection and zoom. If a change to the setup was a mistake, <b>Undo setup changes</b> lists the earlier autosaves (the last 20 changed setups); tap one to go back to it.']
   ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
 ];
 let guideAt = 0;
@@ -4246,6 +4393,8 @@ if (bus) bus.onmessage = e => {
     if (isLive()) setFeed(bad ? 'error' : m.state, bad ? bad.error : m.msg);
   }
   else if (m.t === 'close-tab' && m.id === popTab) window.close();
+  else if (m.t === 'restore') { restoring = true; if (popTab) window.close(); }
+  else if (m.t === 'restored' && !popTab) location.reload();
   else if (m.t === 'focus' && m.id === popTab) window.focus();
   else if (m.t === 'tab-open' && !popTab && tabs.some(t => t.id === m.id)) {
     outTabs.add(m.id); watchTab(m.id);
@@ -4310,6 +4459,7 @@ if (popTab && canPopOut) {
   setTimeout(() => { notePos(); setInterval(notePos, 2000); addEventListener('resize', notePos); addEventListener('pagehide', notePos); }, 1500);
 } else if (canPopOut) {
   addEventListener('pagehide', () => {
+    if (restoring) return;
     const ids = [...outTabs].filter(id => tabs.some(t => t.id === id));
     try { if (ids.length) localStorage.setItem(POPPED_KEY, JSON.stringify(ids)); } catch (e) {}
     ids.forEach(id => { const w = popWins[id]; if (w && !w.closed) w.close(); post({ t: 'close-tab', id }); });
@@ -4339,6 +4489,7 @@ addEventListener('storage', e => {
     case COLOR_KEY: colors = j && typeof j === 'object' ? j : {}; applyColors(); break;
     case SCALE_KEY: if (j === 'auto' || typeof j === 'number') { scalePref = j; applyScale(); } break;
     case SAVED_KEY: savedLayouts = Array.isArray(j) ? j : []; break;
+    case SSR_KEY: case HALT_KEY: setMarker(e.key, e.newValue === '1'); break;
     case ZOOM_KEY: zoomMode = e.newValue === 'highlight' ? 'highlight' : 'pinch'; tiles.forEach(t => t.chart && t.applyZoomMode()); break;
     case VOLSEP_KEY: if ((e.newValue === '1') !== volSep) { volSep = !volSep; for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); } render(); } break;
     case ROTATE_KEY: rotateOn = e.newValue !== '0'; break;
@@ -4348,6 +4499,81 @@ addEventListener('storage', e => {
 
 // Installing: Chrome and Edge offer it through the menu here; Safari on a Mac has File → Add to Dock.
 let installAsk = null;
+// The desktop setup travels through your Schwab helper: the main desktop window saves its layout and settings
+// there when it closes (and every few minutes while open), and any device can open it from Chart settings.
+// The connection (helper address and password) and the zoom stay each device's own.
+const SETUP_SKIP = ['multichart-data-v1', 'multichart-scale-v1'];
+function setupData() {
+  save();
+  const all = {};
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k)) all[k] = localStorage.getItem(k); }
+  return all;
+}
+const canSync = () => dataCfg.mode === 'schwab' && !!dataCfg.helper && !!dataCfg.pass;
+let setupSent = '';
+function sendSetup(closing) {
+  if (!canSync() || restoring) return;
+  const body = JSON.stringify({ from: 'desktop', data: setupData() });
+  if (body === setupSent) return;
+  setupSent = body;
+  // A request sent as the window closes survives only with keepalive, which allows about 64 KB. Bigger setups go as
+  // normal requests and rely on the saves made while the app was open.
+  const small = body.length < 60000;
+  if (closing && !small) return;
+  try { fetch(helperBase() + '/setup', { method: 'POST', keepalive: small, headers: { 'X-App-Password': dataCfg.pass, 'Content-Type': 'application/json' }, body }).catch(() => { setupSent = ''; }); } catch (e) {}
+}
+if (canPopOut && !popTab) {
+  addEventListener('pagehide', () => sendSetup(true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) sendSetup(false); });
+  setInterval(() => sendSetup(false), 3 * 60e3);
+}
+async function openDeskSetup() {
+  closePop();
+  if (!canSync()) return toast('Opening the desktop setup needs your Schwab helper connected on this device (Data source).', true);
+  let j;
+  try { j = await helper('/setup'); } catch (e) { return toast(esc(e.message), true); }
+  if (!j || !j.at || !j.data) return toast('No desktop setup has been saved yet. Open Multichart on your computer with Schwab connected, then close it.', true);
+  const when = new Date(j.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const tabsN = (() => { try { return JSON.parse(j.data['multichart-tabs-v1']).tabs.length; } catch (e) { return 0; } })();
+  openPop(document.getElementById('settingsBtn'), `
+    <h4>Last desktop setup</h4>
+    <p class="note">Saved ${esc(when)}${tabsN ? ` · ${tabsN} tab${tabsN === 1 ? '' : 's'}` : ''}. Opening it replaces the layouts, tabs, watchlists, colors, drawings and alerts on this device. Your connection and zoom stay as they are.</p>
+    <div class="menu"><button data-a="go"><span>Open it on this device</span></button></div>`, p => {
+    p.querySelector('[data-a=go]').onclick = () => applySetup(j.data);
+  });
+}
+// Opens a saved setup here. Other windows of the app close (or reload) so none of them writes the old setup back.
+function applySetup(data) {
+  restoring = true; post({ t: 'restore' });
+  setTimeout(() => {
+    Object.keys(localStorage).filter(k => k.startsWith('multichart-') && !SETUP_SKIP.includes(k)).forEach(k => localStorage.removeItem(k));
+    Object.entries(data).forEach(([k, v]) => { if (k.startsWith('multichart-') && !SETUP_SKIP.includes(k) && typeof v === 'string') localStorage.setItem(k, v); });
+    post({ t: 'restored' });
+    if (popTab) window.close(); else location.reload();
+  }, 400);
+}
+// Earlier autosaves, newest first, in case a change to the setup was a mistake.
+async function openSetupHistory() {
+  closePop();
+  if (!canSync()) return toast('Going back to an earlier setup needs your Schwab helper connected on this device (Data source).', true);
+  let j;
+  try { j = await helper('/setup?list=1'); } catch (e) { return toast(esc(e.message), true); }
+  const earlier = (j && j.earlier) || [];
+  if (!earlier.length) return toast('There is no earlier setup yet. One is kept each time the computer app saves a changed setup.', true);
+  const day = new Date().toDateString();
+  const when = t => { const d = new Date(t); return d.toDateString() === day ? 'Today ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
+  openPop(document.getElementById('settingsBtn'), `
+    <h4>Undo setup changes</h4>
+    <p class="note">${j.last ? `Last autosave: ${esc(when(j.last))}. ` : ''}Pick an earlier setup to open it on this device. It replaces the layouts, tabs, watchlists, colors, drawings and alerts here; your connection and zoom stay.</p>
+    <div class="menu">${earlier.map((t, i) => `<button data-at="${t}"><span>${esc(when(t))}${i === 0 ? ' <small>the setup before the last autosave</small>' : ''}</span></button>`).join('')}</div>`, p => {
+    p.querySelectorAll('[data-at]').forEach(b => b.onclick = async () => {
+      let r;
+      try { r = await helper('/setup?at=' + b.dataset.at); } catch (e) { return toast(esc(e.message), true); }
+      if (!r || !r.data) return toast('That setup is no longer kept.', true);
+      closePop(); applySetup(r.data);
+    });
+  });
+}
 const installed = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installAsk = e; });
 addEventListener('appinstalled', () => { installAsk = null; toast('Multichart is installed. Open it from your Start menu, Dock or desktop.'); });
@@ -4388,11 +4614,29 @@ function beat() {
     // Watchlist prices stream from Schwab; a fresh batch now and then fills any gaps.
     if (Date.now() - quotesAt > (dataCfg.mode === 'schwab' && streamUp() ? 120e3 : 15e3)) refreshQuotes();
   } else new Set([...wanted(), ...watchSyms()]).forEach(sym => tick(store(sym)));
-  tiles.forEach(t => t.update());
+  // A window nobody can see (minimized, or behind others) skips redrawing until it shows again.
+  if (!document.hidden || vp.on) tiles.forEach(t => t.update());
+  dropUnused();
   if (leader) checkAlerts();  // one window watches the alerts, so a hit beeps once
   if (vp.on) paintPip();
 }
 setInterval(beat, 700);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tiles.forEach(t => t.kind === 'chart' && t.chart ? t.load(true) : t.update()); });
+// Price history for symbols this window no longer shows (another tab, a changed symbol) is let go after a few
+// minutes, so it doesn't pile up in memory over a long day. It loads again if it comes back.
+const unusedSince = new Map();
+let dropAt = 0;
+function dropUnused() {
+  const now = Date.now();
+  if (now - dropAt < 30e3) return;
+  dropAt = now;
+  const keep = wanted();
+  Object.keys(stores).forEach(sym => {
+    if (keep.has(sym) || !ready(stores[sym])) { unusedSince.delete(sym); return; }
+    if (!unusedSince.has(sym)) unusedSince.set(sym, now);
+    else if (now - unusedSince.get(sym) > 3 * 60e3) { delete stores[sym]; unusedSince.delete(sym); }
+  });
+}
 if (vidPip) setTimeout(pipFeed, 1000);
 setInterval(backfill, 60000);
 // Fundamentals panels check for fresh news and update "5m ago" times once a minute.

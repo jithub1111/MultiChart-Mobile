@@ -1,14 +1,11 @@
 [
+{"id": "20261104-night", "date": "11/04/26", "label": "Night Before", "tickers": ["KTTA", "CHSN", "EHGO", "CRIS", "SEGG", "NVA", "ULH"]},
+{"id": "20261103-morning", "date": "11/03/26", "label": "Morning", "tickers": ["SEGG", "INO", "BLZE", "SGRX", "ONEG", "CVEO", "TNMG"]},
+{"id": "20261103-night", "date": "11/03/26", "label": "Night Before", "tickers": ["SEGG", "INO", "BLZE", "CLRO", "ONEG", "CVEO", "TNMG", "SGRX"]},
 {"id": "20261102-morning", "date": "11/02/26", "label": "Morning", "tickers": ["ONEG", "INO", "CLRO", "BOOM", "AIOK", "TOYO", "PCLA"]},
 {"id": "20261102-night", "date": "11/02/26", "label": "Night Before", "tickers": ["ONEG", "INO", "BOOM", "AIOK", "NFE", "TOYO", "PCLA"]},
 {"id": "20261030-morning", "date": "10/30/26", "label": "Morning", "tickers": ["NCPL", "AEYE", "LUNG", "PCLA", "NRXP", "BOOM", "FTFT", "PODC", "KIDS", "EVMN", "ELPW"]},
 {"id": "20261030-night", "date": "10/30/26", "label": "Night Before", "tickers": ["NCPL", "AEYE", "LUNG", "PCLA", "BOOM", "FTFT", "PODC", "KIDS", "EVMN", "ELPW"]},
 {"id": "20261029-morning", "date": "10/29/26", "label": "Morning", "tickers": ["BOOM", "AEYE", "PCLA", "FTFT", "AIOK", "GCTK", "NUWE", "IPST"]},
-{"id": "20261029-night", "date": "10/29/26", "label": "Night Before", "tickers": ["AIOK", "BOOM", "AEYE", "FTFT", "GCTK", "NUWE", "IPST"]},
-{"id": "20261028-morning", "date": "10/28/26", "label": "Morning", "tickers": ["AIOK", "AEYE", "ELPW", "BRAI", "NUWE", "GCTK", "EAF", "CLRO", "AZTR", "JAGX"]},
-{"id": "20261028-night", "date": "10/28/26", "label": "Night Before", "tickers": ["AEYE", "NUWE", "AIOK", "VEEA", "GCTK", "EAF", "CLRO", "AZTR", "JAGX"]},
-{"id": "20261027-morning", "date": "10/27/26", "label": "Morning", "tickers": ["CLRO", "AIOK", "VEEA", "AZTR", "GCTK", "HTCO", "JYD"]},
-{"id": "20261027-night", "date": "10/27/26", "label": "Night Before", "tickers": ["CLRO", "VEEA", "AZTR", "GCTK", "HTCO", "JYD"]},
-{"id": "20261026-morning", "date": "10/26/26", "label": "Morning", "tickers": ["BOLT", "AIOK", "CLRO", "STAK", "KRRO", "AVEX"]},
-{"id": "20261026-night", "date": "10/26/26", "label": "Night Before", "tickers": ["BOLT", "AIOK", "CLRO", "STAK", "KRRO", "AVEX"]}
+{"id": "20261029-night", "date": "10/29/26", "label": "Night Before", "tickers": ["AIOK", "BOOM", "AEYE", "FTFT", "GCTK", "NUWE", "IPST"]}
 ]
