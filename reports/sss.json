@@ -1,4 +1,5 @@
 [
+{"id": "20261105-morning", "date": "11/05/26", "label": "Morning", "tickers": ["KTTA", "CRCT", "ELPW", "OMH", "LYEL", "CHSN", "IBTA", "CRMT", "RDAC", "EHGO"], "scan": ["OMH", "INM", "CMTG", "CRIS", "PMAX", "LYEL", "DKI", "HPAI", "ADV", "TREE", "IFBD", "WATR", "AEHL", "ZNB", "PLCE", "JLHL", "SEZL", "ARQ", "KPTI", "ZVIA"]},
 {"id": "20261105-night", "date": "11/05/26", "label": "Night Before", "tickers": ["KTTA", "CRCT", "OMH", "LYEL", "CHSN", "IBTA", "CRMT", "RDAC", "EHGO"], "scan": ["OMH", "CMTG", "CRIS", "PMAX", "LYEL", "DKI", "HPAI", "ADV", "TREE", "ATPC", "WEYS", "PLCE", "ZNB", "AEHL", "SEZL", "JLHL", "ARQ", "VRAX", "ZVIA", "NTCL"]},
 {"id": "20261104-morning", "date": "11/04/26", "label": "Morning", "tickers": ["KTTA", "CHSN", "EHGO", "CRIS", "SEGG", "NVA", "ULH"], "scan": ["CHSN", "RDAC", "MERC", "PARA", "KTTA", "IFBD", "REED", "CRMT", "EHGO", "HUBC", "BIVI", "SGLY", "FRGT", "DBGI", "AZIO", "ZJYL", "HPAI", "CRIS", "DKI", "ALIT", "YOUL", "LBGJ", "SAFX", "XXII"]},
 {"id": "20261104-night", "date": "11/04/26", "label": "Night Before", "tickers": ["KTTA", "CHSN", "EHGO", "CRIS", "SEGG", "NVA", "ULH"], "scan": ["CHSN", "RDAC", "MERC", "PARA", "KTTA", "IFBD", "REED", "CRMT", "EHGO", "HUBC", "BIVI", "SGLY", "FRGT", "DBGI", "AZIO", "ZJYL", "HPAI", "DKI", "CRIS", "ALIT", "XXII"]},
@@ -7,6 +8,5 @@
 {"id": "20261102-morning", "date": "11/02/26", "label": "Morning", "tickers": ["ONEG", "INO", "CLRO", "BOOM", "AIOK", "TOYO", "PCLA"], "scan": ["ONEG", "CHOW", "SGRX", "SLGB", "ASUR", "NFE", "ULH", "AIOK", "MF", "TNMG", "ZJYL", "BYSI", "CIRC", "RPGL", "INO", "CLRO", "CALC", "VCIG", "JUNS", "FEBO", "PRFX", "PMN", "FGL", "SDA", "IBG", "SRTM", "KIDZ", "DRK", "ITOC", "INTZ", "AMIX", "OMEX", "CHGA"]},
 {"id": "20261102-night", "date": "11/02/26", "label": "Night Before", "tickers": ["ONEG", "INO", "BOOM", "AIOK", "NFE", "TOYO", "PCLA"], "scan": ["ONEG", "CHOW", "SGRX", "SLGB", "ASUR", "NFE", "ULH", "AIOK", "MF", "TNMG", "ZJYL", "BYSI", "CIRC", "RPGL", "INO", "CLRO", "CALC", "VCIG", "JUNS", "FEBO", "PRFX", "PMN", "FGL", "SDA", "IBG", "SRTM", "KIDZ", "DRK", "ITOC", "INTZ", "AMIX", "OMEX", "CHGA"]},
 {"id": "20261030-morning", "date": "10/30/26", "label": "Morning", "tickers": ["NCPL", "AEYE", "LUNG", "PCLA", "NRXP", "BOOM", "FTFT", "PODC", "KIDS", "EVMN", "ELPW"]},
-{"id": "20261030-night", "date": "10/30/26", "label": "Night Before", "tickers": ["NCPL", "AEYE", "LUNG", "PCLA", "BOOM", "FTFT", "PODC", "KIDS", "EVMN", "ELPW"]},
-{"id": "20261029-night", "date": "10/29/26", "label": "Night Before", "tickers": ["AIOK", "BOOM", "AEYE", "FTFT", "GCTK", "NUWE", "IPST"]}
+{"id": "20261030-night", "date": "10/30/26", "label": "Night Before", "tickers": ["NCPL", "AEYE", "LUNG", "PCLA", "BOOM", "FTFT", "PODC", "KIDS", "EVMN", "ELPW"]}
 ]
