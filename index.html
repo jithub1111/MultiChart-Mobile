@@ -260,6 +260,23 @@ html.nobar .showbar { display: inline-flex; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib svg { width: 16px; height: 16px; }
 .body { flex: 1; min-height: 0; position: relative; }
+.qtf {
+  position: absolute; left: 0; bottom: 0; z-index: 3; display: flex; max-width: calc(100% - 64px); overflow-x: auto; scrollbar-width: none;
+  height: calc(20px * var(--scale)); background: var(--panel); border-top-right-radius: 4px;
+}
+.qtf::-webkit-scrollbar { display: none; }
+.qtf[hidden] { display: none; }
+.qtf button {
+  flex: none; border: 0; background: none; color: var(--muted); font-family: var(--ui); font-size: max(9px, calc(11px * var(--scale)));
+  padding: 0 calc(5px * var(--scale)); position: relative; white-space: nowrap; cursor: pointer;
+}
+.qtf button:hover { color: var(--fg); }
+.qtf button.on { color: var(--fg); background: var(--head); font-weight: 600; }
+.qtf i { position: absolute; top: -3px; right: 0; font-style: normal; font-size: 9px; line-height: 1; color: var(--muted); padding: 1px; }
+.qtf i:hover { color: var(--down); }
+.qtf .cus { padding-right: calc(9px * var(--scale)); }
+@container (max-width: 230px) { .qtf { display: none; } }
+@container (max-height: 120px) { .qtf { display: none; } }
 .legend {
   position: absolute; left: 8px; top: 5px; z-index: 3; pointer-events: none;
   font-family: var(--num); font-size: 11px; color: var(--muted);
@@ -653,7 +670,17 @@ html.nobar .showbar { display: inline-flex; }
 /* ---------- demo market data ---------- */
 const TF = { '1m': 1, '2m': 2, '5m': 5, '15m': 15, '30m': 30, '1h': 60, 'D': 'D', 'W': 'W' };
 // How much an intraday chart opens on (sessions), and how far back a daily or weekly chart opens (months, or the year so far).
-const DAYS = [1, 2, 3, 5, 10];
+const DAYS = [1, 2, 3, 5, 10, 15];
+// Quick timeframe buttons along the bottom of each chart, as in thinkorswim, plus your own saved ones
+// ({ tf, span }: span is a number of days for minute charts, or a range like '1Y' for daily and weekly).
+const QTF_KEY = 'multichart-quicktf-v1', QTF_CUSTOM_KEY = 'multichart-quicktf-custom-v1';
+const QTF = [['5y', '5Y'], ['1y', '1Y'], ['6m', '6M'], ['3m', '3M'], ['1m', '1M'], ['15d', 15], ['5d', 5]];
+let qtfOn = true, qtfCustom = [];
+try { qtfOn = localStorage.getItem(QTF_KEY) !== '0'; } catch (e) {}
+const okQtf = x => x && typeof x.tf === 'string' && (typeof x.span === 'number' || typeof x.span === 'string');
+try { const v = JSON.parse(localStorage.getItem(QTF_CUSTOM_KEY)); if (Array.isArray(v)) qtfCustom = v.filter(okQtf); } catch (e) {}
+const saveQtf = () => { try { localStorage.setItem(QTF_CUSTOM_KEY, JSON.stringify(qtfCustom)); } catch (e) {} };
+const qtfLabel = x => (typeof x.span === 'number' ? x.span + 'd' : String(x.span).toLowerCase()) + ' ' + x.tf;
 const RANGES = { '1M': 1, '3M': 3, '6M': 6, 'YTD': 'ytd', '1Y': 12, '2Y': 24, '5Y': 60, '10Y': 120, '20Y': 240 }, RANGE_DEFAULT = { D: '6M', W: '2Y' };
 const OPEN = 9 * 3600 + 30 * 60;           // 9:30 ET, stored as wall-clock seconds
 const SESSION = 390;                        // minutes per regular session
@@ -1412,6 +1439,7 @@ function setMarker(key, on) {
 }
 // Volume either sits under the candles (default) or gets its own strip with its own scale.
 const VOLSEP_KEY = 'multichart-volsep-v1';
+function paintQuicks() { tiles.forEach(t => t.paintQuick && t.chart && t.paintQuick()); }
 let volSep = false;
 try { volSep = localStorage.getItem(VOLSEP_KEY) === '1'; } catch (e) {}
 function setVolSep(on) {
@@ -2095,6 +2123,23 @@ class Tile {
       const body = this.$('.body');
       body.innerHTML = '<div class="legend"></div><div class="ohlc" hidden></div><svg class="draw-layer"></svg><div class="hint" hidden><span></span><button type="button">Cancel</button></div><div class="msg" hidden></div>';
       this.$('.drw').addEventListener('click', e => drawPop(e.currentTarget, this));
+      body.insertAdjacentHTML('beforeend', '<div class="qtf"></div>');
+      ['pointerdown', 'pointermove', 'dblclick', 'touchstart'].forEach(k => this.$('.qtf').addEventListener(k, e => e.stopPropagation()));
+      this.$('.qtf').addEventListener('click', e => {
+        const b = e.target.closest('[data-q],[data-c],[data-x],[data-add]');
+        if (!b) return;
+        e.stopPropagation();
+        if (b.dataset.x != null) { qtfCustom.splice(+b.dataset.x, 1); saveQtf(); return paintQuicks(); }
+        if (b.dataset.add != null) {
+          const x = { tf: this.cell.tf, span: this.intraday ? this.cell.days || 1 : this.range };
+          if (!qtfCustom.some(y => y.tf === x.tf && y.span === x.span)) { qtfCustom.push(x); qtfCustom = qtfCustom.slice(-12); saveQtf(); }
+          toast(`Saved <b>${esc(qtfLabel(x))}</b> as a quick timeframe. Tap the small × on it to remove it.`);
+          return paintQuicks();
+        }
+        if (b.dataset.c != null) { const x = qtfCustom[+b.dataset.c]; if (x) this.applyQuick(x.tf, x.span); return; }
+        const q = QTF.find(y => y[0] === b.dataset.q);
+        if (q) this.applyQuick(null, q[1]);
+      });
       this.$('.hint button').addEventListener('click', () => this.setMode(null));
       this.lines = [];
       const sep = volSep;
@@ -2504,6 +2549,7 @@ class Tile {
   // Intraday charts open on their chosen number of days (pre-market on), daily and weekly ones on their chosen range.
   // Until you scroll or zoom, the view keeps that framing as bars arrive and the panel resizes.
   fitView() {
+    this.paintQuick();
     this.autoFit = true;
     this.$('.zoomreset').hidden = true;
     this.roomTop();
@@ -2513,6 +2559,29 @@ class Tile {
   refit() {
     const n = this.fitN = this.list.length, from = this.intraday ? dayStart(this.list, this.cell.days || 1) : rangeStart(this.list, this.range);
     this.chart.timeScale().setVisibleLogicalRange({ from: from - 0.2, to: n + 4 });
+  }
+  // The quick buttons: a number of days keeps a minute chart (or goes back to the last minute timeframe used),
+  // a range of months or years makes it daily (a weekly chart stays weekly). Saved ones set both.
+  applyQuick(tf, span) {
+    const c = this.cell;
+    if (!tf) tf = typeof span === 'number' ? (this.intraday ? c.tf : typeof TF[c.itf] === 'number' ? c.itf : '5m') : (this.intraday ? 'D' : c.tf);
+    if (!TF[tf]) return;
+    if (typeof span === 'number') { if (span === 1) delete c.days; else c.days = DAYS.includes(span) ? span : 15; }
+    else if (RANGES[span]) c.range = span;
+    if (this.intraday) c.itf = c.tf;
+    if (tf !== c.tf) { c.tf = tf; this.load(); } else this.fitView();
+    save();
+  }
+  paintQuick() {
+    const q = this.$('.qtf');
+    if (!q) return;
+    q.hidden = !qtfOn;
+    if (!qtfOn) return;
+    const intra = this.intraday, cur = intra ? this.cell.days || 1 : this.range;
+    const on = (tf, span) => (!tf || tf === this.cell.tf) && span === cur && (typeof span === 'number') === intra;
+    q.innerHTML = QTF.map(([k, span]) => `<button data-q="${k}" class="${on(null, span) ? 'on' : ''}">${k}</button>`).join('')
+      + qtfCustom.map((x, i) => `<button data-c="${i}" class="cus${on(x.tf, x.span) ? ' on' : ''}" title="Saved: ${esc(qtfLabel(x))}">${esc(qtfLabel(x))}<i data-x="${i}" aria-label="Remove">×</i></button>`).join('')
+      + '<button data-add="1" title="Save this chart\'s timeframe as a quick button" aria-label="Save this timeframe">+</button>';
   }
   get range() { return RANGES[this.cell.range] ? this.cell.range : RANGE_DEFAULT[this.cell.tf] || '6M'; }
   get showVwap() { return this.cell.vwap && this.intraday; }
@@ -2576,6 +2645,7 @@ class Tile {
         span.setAttribute('aria-label', intra ? 'Days shown' : 'Time range shown');
       }
       span.value = intra ? this.cell.days || 1 : this.range;
+      this.paintQuick();
       const list = bars(sym, this.cell.tf);
       const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
       this.candles.applyOptions({ priceFormat: fmt });
@@ -3488,6 +3558,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
     <hr>
     <div class="menu">
       <button data-a="volsep"><span>Separate volume chart</span><span class="check ${volSep ? 'on' : ''}"></span></button>
+      <button data-a="qtf"><span>Quick timeframe buttons <small>5y 1y 6m 3m 1m 15d 5d and your own, under each chart</small></span><span class="check ${qtfOn ? 'on' : ''}"></span></button>
       <button data-a="ssr"><span>SSR indicator <small>red S by the price when short sales are restricted</small></span><span class="check ${ssrOn ? 'on' : ''}"></span></button>
       <button data-a="halt"><span>Halt indicator <small>chart turns red while the stock is halted</small></span><span class="check ${haltOn ? 'on' : ''}"></span></button>
       <button data-a="rotate"><span>Turn layout with the phone <small>portrait and landscape</small></span><span class="check ${rotateOn ? 'on' : ''}"></span></button>
@@ -3504,6 +3575,7 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
     });
     p.querySelector('[data-a=volsep]').onclick = () => { closePop(); setVolSep(!volSep); };
+    p.querySelector('[data-a=qtf]').onclick = () => { closePop(); qtfOn = !qtfOn; try { localStorage.setItem(QTF_KEY, qtfOn ? '1' : '0'); } catch (e) {} paintQuicks(); };
     p.querySelector('[data-a=desk]').onclick = () => openDeskSetup();
     p.querySelector('[data-a=undo]').onclick = () => openSetupHistory();
     p.querySelector('[data-a=ssr]').onclick = () => { closePop(); setMarker(SSR_KEY, !ssrOn); };
@@ -3546,7 +3618,8 @@ const GUIDE = [
     ['SPY ▾', 'The ticker. Tap it and just start typing: the old one is highlighted, and after you press Enter the box closes and the new ticker stays highlighted, so you can just type the next one and the box opens again, and matching tickers show up as you type (with Schwab connected, every listed and OTC symbol, also by company name). Your recent tickers are below.'],
     ['1', 'The link group. Panels with the same colored number always show the same ticker, so changing one changes them all. There are 12 groups.'],
     ['Price', 'Last price, change and percent change, then the bid (B) and ask (A).'],
-    ['3D', 'How much the chart opens on: 1 to 10 days for minute charts, or 1M to 20Y for daily and weekly.'],
+    ['3D', 'How much the chart opens on: 1 to 15 days for minute charts, or 1M to 20Y for daily and weekly.'],
+    ['5y … 5d', 'Quick timeframes along the bottom of the chart, as in thinkorswim. <b>5y</b> to <b>1m</b> switch to a daily chart over that stretch; <b>15d</b> and <b>5d</b> go back to minute bars over that many days. <b>+</b> saves the chart\'s current timeframe and days as a button of your own (tap its × to remove it). Turn the row off in Chart settings.'],
     ['5m', 'The timeframe: 1m, 2m, 5m, 15m, 30m, 1h, daily or weekly.'],
     ['Line', 'Drawing tools: a price level or a trendline. Drawings follow the ticker onto every chart of it.'],
     ['⋮', 'The panel menu: VWAP on or off, add to watchlist, full screen, float this panel, remove.']
@@ -4667,6 +4740,8 @@ addEventListener('storage', e => {
     case SAVED_KEY: savedLayouts = Array.isArray(j) ? j : []; break;
     case SSR_KEY: case HALT_KEY: setMarker(e.key, e.newValue === '1'); break;
     case ZOOM_KEY: zoomMode = e.newValue === 'highlight' ? 'highlight' : 'pinch'; tiles.forEach(t => t.chart && t.applyZoomMode()); break;
+    case QTF_KEY: qtfOn = e.newValue !== '0'; paintQuicks(); break;
+    case QTF_CUSTOM_KEY: qtfCustom = Array.isArray(j) ? j.filter(okQtf) : []; paintQuicks(); break;
     case VOLSEP_KEY: if ((e.newValue === '1') !== volSep) { volSep = !volSep; for (const [id, t] of tiles) if (t.chart) { t.destroy(); tiles.delete(id); } render(); } break;
     case ROTATE_KEY: rotateOn = e.newValue !== '0'; break;
     case DATA_KEY: location.reload(); break;  // a new data source or sign-in: start over with it
