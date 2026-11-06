@@ -481,6 +481,9 @@ html.nobar .showbar { display: inline-flex; }
   color: #f5b041; background: color-mix(in srgb, #f5b041 16%, transparent); }
 .wr .ws .wtag.go { color: var(--up); background: color-mix(in srgb, var(--up) 16%, transparent); }
 .wr .ws .wtag.subpar { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+/* Red H (halted) or S (short sale restriction) right after a watchlist ticker. */
+.wr .ws .wflag { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 3px; font-size: 9.5px; font-weight: 800; line-height: 14px; font-style: normal; vertical-align: 1px; color: #fff; background: #d81e2c; }
+.wr .ws .wflag + .wflag { margin-left: 2px; }
 .wr .ws .wtag small { font-size: 8px; opacity: .85; margin-left: 2px; }
 .wempty { margin: 0; padding: 14px 12px; color: var(--muted); font-family: var(--ui); font-size: 12.5px; line-height: 1.5; }
 .wempty .btn { margin-top: 8px; }
@@ -1324,6 +1327,7 @@ async function openSchwab() {
 function onSchwabData(d) {
   (d.content || []).forEach(c => {
     if (d.service === 'LEVELONE_EQUITIES' && quotes.has(c.key)) setQuote(quotes.get(c.key), { bid: c[1], ask: c[2], last: c[3], vol: c[8], close: c[12], chg: c[18], pct: c[42], high: c[10], low: c[11], open: c[17], hi52: c[19], lo52: c[20], pe: c[21] });
+    if (d.service === 'LEVELONE_EQUITIES' && quotes.has(c.key) && c[32] != null) quotes.get(c.key).status = String(c[32]);
     const s = stores[c.key];
     if (!s || !s.live || !s.ready) return;
     if (d.service === 'LEVELONE_EQUITIES') {
@@ -1909,6 +1913,7 @@ async function refreshQuotes() {
         setQuote(q, { last: x.lastPrice, bid: x.bidPrice, ask: x.askPrice, close: x.closePrice, vol: x.totalVolume, chg: x.netChange, pct: x.netPercentChange,
           open: x.openPrice, high: x.highPrice, low: x.lowPrice, hi52: x['52WeekHigh'], lo52: x['52WeekLow'], avg: f.avg10DaysVolume, pe: f.peRatio });
         if (r.reference && r.reference.description) q.name = r.reference.description;
+        if (x.securityStatus) q.status = String(x.securityStatus);
       } else if (r && (r.latestTrade || r.dailyBar)) {
         const b = r.dailyBar || {};
         setQuote(q, { last: r.latestTrade && r.latestTrade.p, bid: r.latestQuote && r.latestQuote.bp, ask: r.latestQuote && r.latestQuote.ap, close: r.prevDailyBar && r.prevDailyBar.c, vol: b.v, open: b.o, high: b.h, low: b.l });
@@ -2044,6 +2049,46 @@ function wvals(sym) {
     open, high: ok(q.high), low: ok(q.low), prev: c, gap: open && c ? (open - c) / c * 100 : null, vol, avg, rvol: vol && avg ? vol / avg : null,
     hi52: ok(q.hi52), lo52: ok(q.lo52), cap: q.shares && p ? q.shares * p : ok(q.cap), float: ok(q.float), pe: ok(q.pe)
   };
+}
+// The red H and S beside a watchlist ticker: H while Schwab reports it halted, S under the short sale restriction.
+// A ticker that has a chart open uses the chart's own check. Otherwise today's low comes from the quote
+// (only after the 9:30 open, since the rule counts regular hours), and yesterday's comes from a small
+// daily history, fetched once a day per ticker.
+function wflags(sym) {
+  const s = stores[sym], q = isLive() ? quotes.get(sym) || {} : {}, chart = s && (!isLive() || s.live && s.ready);
+  let f = '';
+  if (chart ? isHalted(s) : isHalted(q)) f += 'H';
+  if (chart ? ssrOf(s) : quoteSsr(sym, q)) f += 'S';
+  return f;
+}
+function quoteSsr(sym, q) {
+  const now = etSec(Date.now()), today = now - now % 86400, open = now % 86400 >= OPEN;
+  if (open && q.low > 0 && q.close > 0 && q.low <= q.close * 0.9) return true;
+  if (dataCfg.mode !== 'schwab' || !q.sym) return false;
+  if (q.ssrDay !== today) { q.ssrDay = today; q.ssrPrev = false; ssrWant.add(sym); clearTimeout(ssrTimer); ssrTimer = setTimeout(refreshSsr, 400); }
+  return q.ssrPrev;
+}
+let ssrWant = new Set(), ssrTimer = 0, ssrBusy = false;
+async function refreshSsr() {
+  if (ssrBusy) return;
+  ssrBusy = true;
+  try {
+    while (ssrWant.size) {
+      const part = [...ssrWant].slice(0, 4);
+      part.forEach(x => ssrWant.delete(x));
+      await Promise.all(part.map(async sym => {
+        const q = quotes.get(sym);
+        if (!q) return;
+        try {
+          const j = await helper(`/pricehistory?symbol=${encodeURIComponent(sym)}&endDate=${Date.now() + 60e3}&periodType=month&period=1&frequencyType=daily&frequency=1`);
+          const now = etSec(Date.now()), today = now - now % 86400, D = candles(j, true).filter(b => b.time < today);
+          // The last finished session fell 10% below the close before it, so today is restricted too.
+          const n = D.length;
+          q.ssrPrev = n >= 2 && D[n - 1].low <= D[n - 2].close * 0.9;
+        } catch (e) { setTimeout(() => { q.ssrDay = 0; }, 5 * 60e3); }  // tried again in five minutes
+      }));
+    }
+  } finally { ssrBusy = false; }
 }
 function flash(el, up) {
   if (!el.animate) return;
@@ -2380,7 +2425,7 @@ class Tile {
       const [sk, sd] = sort.split(':'), top = wl.scrollTop, left = wl.scrollLeft, cls = k => WCOL[k].c + (WCOL[k].f && k !== 'name' ? ' num' : '');
       const head = ed ? '<div class="wedit"><span>Drag the dots to reorder. ✕ removes.</span><button class="btn" data-a="done">Done</button></div>'
         : `<div class="wr wh">${cols.map(k => `<span class="${cls(k)}" data-k="${k}"${k === sk ? ` data-dir="${sd}"` : ''}><span class="wt">${WCOL[k].h}</span><i class="wgrab" aria-hidden="true"></i></span>`).join('')}</div>`;
-      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${cols.map(k => `<span class="${cls(k)}">${k === 'sym' ? esc(s) + (ed ? '' : autoTag(l, s)) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
+      const rows = l.syms.map(s => `<div class="wr" data-s="${esc(s)}"><span class="grip">${ICON.grip}</span>${cols.map(k => `<span class="${cls(k)}">${k === 'sym' ? esc(s) + (ed ? '' : '<i class="wflag" data-f="H" hidden title="Trading in this stock is halted">H</i><i class="wflag" data-f="S" hidden title="Short sale restriction (SSR): the stock fell 10% below the previous close, so short sales are restricted today (and next session)">S</i>' + autoTag(l, s)) : ''}</span>`).join('')}<button class="wx" aria-label="Remove ${esc(s)}">✕</button></div>`).join('');
       wl.classList.toggle('editing', ed);
       wl.classList.toggle('auto', !ed && !mine);
       wl.classList.toggle('custom', !!mine);
@@ -2427,6 +2472,13 @@ class Tile {
       r.p = v.last;
       r.el.classList.toggle('on', sym === this.cell.sym);
       r.el.classList.toggle('bad', v.missing);
+      if (r.cells.sym && !this.wediting) {
+        const f = wflags(sym);
+        if (r.flags !== f) {
+          r.flags = f;
+          r.cells.sym.querySelectorAll('.wflag').forEach(i => i.hidden = !f.includes(i.dataset.f));
+        }
+      }
       vals.push({ ...v, sym, name: v.name || sym });
     }
     // Sorted lists keep re-sorting as prices move (not while you're dragging a row).
@@ -3681,7 +3733,7 @@ const GUIDE = [
     ['Move setup', '<b>Copy all my settings</b> and <b>Load settings</b> carry your tabs, layouts, colors and lists to another device or the Home Screen app.'],
     ['Colors', 'Change any color, or pick a theme: Dark, DAS classic, Light, <b>TOS Theme Candles</b> or <b>TOS Theme Full</b>.'],
     ['Settings', 'Chart settings also has a separate volume chart, and on phones the layout turning with the screen.'],
-    ['SSR and halts', 'Turn on the <b>SSR indicator</b> for a red S by the price when a stock is under the short sale restriction (it fell 10% below the previous close today or yesterday). The <b>Halt indicator</b> turns the chart red with a HALTED tag while Schwab reports the stock as halted.'],
+    ['SSR and halts', 'Turn on the <b>SSR indicator</b> for a red S by the price when a stock is under the short sale restriction (it fell 10% below the previous close today or yesterday). The <b>Halt indicator</b> turns the chart red with a HALTED tag while Schwab reports the stock as halted. Watchlists always show a red <b>H</b> (halted) or <b>S</b> (SSR) right after the ticker.'],
     ['Desktop setup', 'With Schwab connected, the computer app saves its layout and settings to your helper when you close it (and every few minutes). On any other device, <b>Chart settings → Open last desktop setup</b> brings the same tabs, layouts, watchlists, colors, drawings and alerts over. Each device keeps its own connection and zoom. If a change to the setup was a mistake, <b>Undo setup changes</b> lists the earlier autosaves (the last 20 changed setups); tap one to go back to it.']
   ], tip: 'You can open this guide again any time from <b>Chart settings → Guide</b>.' }
 ];
