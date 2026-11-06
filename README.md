@@ -82,7 +82,7 @@ needs the app hosted somewhere else (for example GitHub Pages).
 ## Running it
 
 Open `index.html` in any browser. There is no build step. Charts use
-[Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0, loaded from jsDelivr.
+[Lightweight Charts](https://github.com/tradingview/lightweight-charts) 4.2.0 by [TradingView](https://www.tradingview.com/), loaded from jsDelivr. The logo on the charts is turned off; the credit is in Chart settings instead.
 
 **Full screen on iPhone:** open the site in Safari, tap Share, then **Add to Home Screen**. Opened from
 the Home Screen icon, the app runs without Safari's bars. iPhone keeps a Home Screen app's settings
