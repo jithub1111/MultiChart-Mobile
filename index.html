@@ -2146,7 +2146,7 @@ class Tile {
       if (sep) body.insertAdjacentHTML('afterbegin', '<div class="cmain"></div><div class="cvol"></div>');
       const base = {
         autoSize: true,
-        layout: { fontFamily: MONO, fontSize: chartFont() },
+        layout: { fontFamily: MONO, fontSize: chartFont(), attributionLogo: false },  // credited in Chart settings instead
         timeScale: { rightOffset: 4, minBarSpacing: 0.01 },  // thin enough for all 16 days of minute bars on a phone
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal }  // follows the finger, not snapped to candles
       };
@@ -2156,7 +2156,7 @@ class Tile {
       this.chart.applyOptions(chartColors());
       if (sep) {
         // Volume in its own chart below, with its own scale on the right, kept in step with the price chart.
-        this.vchart = LightweightCharts.createChart(this.$('.cvol'), { ...base, layout: { ...base.layout, attributionLogo: false }, rightPriceScale: { scaleMargins: { top: 0.15, bottom: 0 } } });
+        this.vchart = LightweightCharts.createChart(this.$('.cvol'), { ...base, layout: base.layout, rightPriceScale: { scaleMargins: { top: 0.15, bottom: 0 } } });
         this.vchart.applyOptions(chartColors());
         this.volume = this.vchart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceLineVisible: false });
         this.volume.attachPrimitive(this.vshade = new SessionShade(this, this.vchart));
@@ -3569,7 +3569,8 @@ document.getElementById('settingsBtn').addEventListener('click', e => {
       <button data-a="undo"><span>Undo setup changes <small>go back to an earlier autosave</small></span></button>
       ${pipOk ? `<button data-a="pip"><span>${vp.on && !vp.id ? 'Stop picture-in-picture' : 'Picture-in-picture <small>float over other apps</small>'}</span></button>` : ''}
       ${!installed() && !inPip && (installAsk || matchMedia('(hover: hover) and (pointer: fine)').matches) ? '<button data-a="install"><span>Install desktop app <small>its own window and icon</small></span></button>' : ''}
-    </div>`, p => {
+    </div>
+    <p class="note">Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener" style="color:inherit">TradingView</a> Lightweight Charts™.</p>`, p => {
     p.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
       setZoomMode(b.dataset.zoom); closePop();
       toast(zoomMode === 'highlight' ? 'Highlight to zoom is on. Drag across a chart to zoom in, then tap <b>Whole day</b> to go back.' : 'Pinch to zoom is on.');
