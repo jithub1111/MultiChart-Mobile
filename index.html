@@ -290,6 +290,7 @@ html.nobar .showbar { display: inline-flex; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .ohlc b { font-weight: 500; color: var(--fg); text-align: right; }
 .ohlc .up { color: var(--up); } .ohlc .down { color: var(--down); }
+.ohlc .v1 { border-top: 1px solid var(--line); margin-top: 2px; padding-top: 2px; }
 
 /* Level II and Time & Sales */
 .msg { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; zoom: var(--scale); pointer-events: none; }
@@ -2298,10 +2299,21 @@ class Tile {
       const box = this.$('.ohlc');
       // It floats next to the cursor (below and to the right, flipping when it would run off the chart).
       const showBar = (src, p) => {
-        const b = p.point && p.logical != null && this.list ? this.list[Math.round(p.logical)] : null;
+        const i = p.point && p.logical != null && this.list ? Math.round(p.logical) : -1, b = i >= 0 ? this.list[i] : null;
         if (!b) { box.hidden = true; return; }
         const d = dec(b.close), f = v => v.toFixed(d), cls = b.close > b.open ? 'up' : b.close < b.open ? 'down' : '';
-        box.innerHTML = `<span>O</span><b>${f(b.open)}</b><span>H</span><b>${f(b.high)}</b><span>L</span><b>${f(b.low)}</b><span>C</span><b class="${cls}">${f(b.close)}</b>`;
+        const fv = v => fBig(v) || '0';
+        // Vol is this candle's volume. Total Vol adds up the day from its first bar through this candle: in
+        // premarket that is the premarket so far, later it is the whole day including premarket.
+        let tot = '';
+        if (this.intraday) {
+          const day = Math.floor(b.time / 86400);
+          let sum = 0;
+          for (let k = i; k >= 0 && Math.floor(this.list[k].time / 86400) === day; k--) sum += this.list[k].volume || 0;
+          tot = `<span class="vl">Total Vol</span><b class="vl">${fv(sum)}</b>`;
+        }
+        box.innerHTML = `<span>O</span><b>${f(b.open)}</b><span>H</span><b>${f(b.high)}</b><span>L</span><b>${f(b.low)}</b><span>C</span><b class="${cls}">${f(b.close)}</b>`
+          + `<span class="vl v1">Vol</span><b class="vl v1">${fv(b.volume || 0)}</b>${tot}`;
         box.hidden = false;
         // Placed from where the mouse or finger really is (followed below), else from the crosshair itself.
         const br = body.getBoundingClientRect();
@@ -3627,7 +3639,7 @@ const GUIDE = [
   ] },
   { t: 'Moving around a chart', p: 'The chart works with fingers, a mouse or a trackpad.', d: [
     ['Drag', 'Scroll back in time (with pinch to zoom). The price and time scales can be dragged too.'],
-    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead (on a touchscreen, hold for a moment first). A small box next to the crosshair shows the open, high, low and close of the candle under it.'],
+    ['Pinch', 'Zoom in and out. In Chart settings you can switch to <b>Highlight to zoom</b> and drag across a stretch to zoom into it instead (on a touchscreen, hold for a moment first). A small box next to the crosshair shows the open, high, low and close of the candle under it, its volume (Vol), and on minute charts the day\'s volume up to that candle (Total Vol: just premarket while in premarket, then the whole day including premarket).'],
     ['Double-tap', 'Zooms all the way out over everything loaded, as in thinkorswim. The button on the chart goes back.'],
     ['Crosshair', 'Follows your finger or mouse and shows the price and time under it, on the volume strip too.'],
     ['Tap a price', 'Tap the price scale to set an alert there. When it hits, a pop-up shows and the app beeps.']
