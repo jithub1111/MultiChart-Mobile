@@ -1239,12 +1239,32 @@ async function loadSchwab(s) {
     minutes(16).catch(() => minutes(10)),
     years(21).catch(() => years(6))  // 20 years of daily bars (a little over, for the 20Y view); 6 if Schwab won't go that far
   ]);
-  settle(s, candles(m), candles(d, true), `No data for ${s.sym}. Check the symbol.`);
+  const m1 = candles(m);
+  await addEarly(s.sym, m1);
+  settle(s, m1, candles(d, true), `No data for ${s.sym}. Check the symbol.`);
   try {
     const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote`);
     const qt = j[s.sym] && j[s.sym].quote;
     if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; if (qt.securityStatus) s.status = String(qt.securityStatus); }
   } catch (e) {}
+}
+
+// Schwab's history only reaches back to 7:00 AM for today (the 4:00-7:00 premarket shows up the next day),
+// so when today's minutes start late, the helper fills the gap from Yahoo's one-minute data.
+const PRE_START = 4 * 3600;
+async function addEarly(sym, m1) {
+  const nowMs = Date.now(), now = etSec(nowMs), today = now - now % 86400;
+  if (now - today < PRE_START + 120) return;
+  let i = m1.findIndex(b => b.time >= today);
+  if (i < 0) i = m1.length;
+  const end = i < m1.length ? m1[i].time : now - now % 60;
+  if (end - today <= PRE_START + 15 * 60) return;  // today's minutes already start near 4:00
+  const toMs = sec => nowMs - (now - sec) * 1000;
+  try {
+    const j = await helper(`/early?symbol=${encodeURIComponent(sym)}&from=${Math.round(toMs(today + PRE_START))}&to=${Math.round(toMs(end))}`);
+    const add = candles(j).filter(b => b.time >= today + PRE_START && b.time < end);
+    if (add.length) m1.splice(i, 0, ...add);
+  } catch (e) { /* the chart still shows Schwab's minutes */ }
 }
 
 let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
