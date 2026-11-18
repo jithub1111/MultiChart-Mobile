@@ -219,6 +219,30 @@ async function yahooFloat(env, sym) {
     };
   }
 }
+// One-minute bars with premarket from Yahoo's chart data, as Schwab-style candles (datetime in ms).
+async function yahooMinutes(env, sym, from, to) {
+  const ysym = sym.replace(/[./]/g, '-'), p1 = Math.floor(from / 1000), p2 = Math.ceil(to / 1000);
+  const src = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ysym)}?interval=1m&includePrePost=true&period1=${p1}&period2=${p2}`;
+  const cache = caches.default, key = new Request(`https://early.cache/${encodeURIComponent(ysym)}/${p1}/${Math.floor(p2 / 60)}`);
+  const hit = await cache.match(key);
+  if (hit) return hit.json();
+  let r = await fetch(src, { headers: BROWSER_HEADERS });
+  if (r.status === 401 || r.status === 403 || r.status === 429) {
+    const s = await yahooSession(env, false).catch(() => null);
+    if (s) r = await fetch(src + `&crumb=${encodeURIComponent(s.crumb)}`, { headers: { ...BROWSER_HEADERS, Cookie: s.cookie } });
+  }
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Fail(`Yahoo's minute data returned ${r.status}.`, 502, 'yahoo');
+  const j = await r.json(), res = j.chart && j.chart.result && j.chart.result[0];
+  const t = (res && res.timestamp) || [], q = (res && res.indicators && res.indicators.quote && res.indicators.quote[0]) || {};
+  const out = [];
+  t.forEach((ts, i) => {
+    const o = q.open && q.open[i], h = q.high && q.high[i], l = q.low && q.low[i], c = q.close && q.close[i];
+    if ([o, h, l, c].every(v => typeof v === 'number' && v > 0)) out.push({ datetime: ts * 1000, open: o, high: h, low: l, close: c, volume: (q.volume && q.volume[i]) || 0 });
+  });
+  await cache.put(key, new Response(JSON.stringify(out), { headers: { 'Cache-Control': 'max-age=60' } }));
+  return out;
+}
 // Finviz's quote page has a "snapshot" table of label and value cells side by side.
 async function finvizFloat(sym) {
   const r = await fetch(`https://finviz.com/quote.ashx?t=${encodeURIComponent(sym.replace(/[./]/g, '-'))}&p=d`, { headers: BROWSER_HEADERS });
@@ -326,6 +350,13 @@ async function route(req, env, url) {
       return json(JSON.parse(await env.TOKENS.get('setup:old:' + at) || 'null') || { at: 0 });
     }
     return json(JSON.parse(await env.TOKENS.get('setup:last') || 'null') || { at: 0 });
+  }
+  // Schwab's minute history leaves out today's 4:00-7:00 AM premarket until the next day, so the app fills
+  // that stretch from Yahoo's one-minute chart (same shape as Schwab's candles). Cached for a minute.
+  if (p === '/early') {
+    const sym = String(url.searchParams.get('symbol') || '').toUpperCase(), from = +url.searchParams.get('from'), to = +url.searchParams.get('to');
+    if (!/^[A-Z0-9.\/-]{1,12}$/.test(sym) || !(from > 0) || !(to > from) || to - from > 864e5) throw new Fail('Odd request.', 400, 'early');
+    return json({ candles: await yahooMinutes(env, sym, from, to) });
   }
   if (p === '/pricehistory' || p === '/quotes' || p === '/instruments') return json(await schwab(env, `/marketdata/v1${p}${url.search}`));
   const sym = (url.searchParams.get('symbol') || '').toUpperCase().trim();
