@@ -1259,13 +1259,21 @@ async function addEarly(sym, m1) {
   if (i < 0) i = m1.length;
   const end = i < m1.length ? m1[i].time : now - now % 60;
   if (end - today <= PRE_START + 15 * 60) return;  // today's minutes already start near 4:00
-  const toMs = sec => nowMs - (now - sec) * 1000;
-  try {
-    const j = await helper(`/early?symbol=${encodeURIComponent(sym)}&from=${Math.round(toMs(today + PRE_START))}&to=${Math.round(toMs(end))}`);
-    const add = candles(j).filter(b => b.time >= today + PRE_START && b.time < end);
-    if (add.length) m1.splice(i, 0, ...add);
-  } catch (e) { /* the chart still shows Schwab's minutes */ }
+  const toMs = sec => Math.round(nowMs - (now - sec) * 1000), from = toMs(today + PRE_START), to = toMs(end);
+  const keep = list => list.filter(b => b.time >= today + PRE_START && b.time < end);
+  let add = [], why = '';
+  try { add = keep(candles(await helper(`/early?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}`))); }
+  catch (e) { why = 'Yahoo: ' + e.message; }
+  if (!add.length && !why) why = 'Yahoo had no minutes for it';
+  // With Alpaca keys saved, its full-market minutes (16 minutes behind on the free plan) fill the gap instead.
+  if (!add.length && dataCfg.key && dataCfg.secret) {
+    try { add = keep(await fetchBars(sym, '1Min', 'sip', from, Math.min(to, nowMs - SIP_DELAY))); }
+    catch (e) { why += (why ? ' · ' : '') + 'Alpaca: ' + e.message; }
+  }
+  if (add.length) m1.splice(i, 0, ...add);
+  else if (why && !earlyWarned) { earlyWarned = true; toast(`Today's 4:00-7:00 AM premarket could not be filled in (${esc(why)}). Schwab only sends it the next day.`, true); }
 }
+let earlyWarned = false;
 
 let sInfo = null, sReq = 1, sKeys = {}, schwabUntil = 0;
 const S_SUBS = [['LEVELONE_EQUITIES', '0,1,2,3,4,5,8,9,10,11,12,17,18,19,20,21,32,35,42'], ['CHART_EQUITY', '0,1,2,3,4,5,6,7,8'], ['NASDAQ_BOOK', '0,1,2,3'], ['NYSE_BOOK', '0,1,2,3']];
