@@ -408,6 +408,9 @@ html.nobar .showbar { display: inline-flex; }
 .picks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 4px 4px; }
 .picks button { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 6px 0; font-family: var(--num); font-size: 12px; font-weight: 600; }
 .picks button:hover { border-color: var(--accent); }
+/* The symbol box's recent tickers: a wider grid with roomier buttons. */
+.picks.recent { grid-template-columns: repeat(5, minmax(62px, 1fr)); gap: 5px; }
+.picks.recent button { padding: 9px 0; font-size: 13.5px; }
 .sugg { display: flex; flex-direction: column; padding: 0 4px 8px; width: 260px; max-width: 100%; }
 .sugg button { display: flex; align-items: baseline; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 6px; min-width: 0; }
 .sugg button b { font-family: var(--num); font-size: 13px; font-weight: 700; flex: none; min-width: 48px; }
@@ -3473,15 +3476,15 @@ function linkPop(anchor, t) {
 }
 
 // Recently opened tickers, newest first. The symbol box shows them, and they come first in the suggestions.
-const RECENT_KEY = 'multichart-recent-v1';
+const RECENT_KEY = 'multichart-recent-v1', RECENT_MAX = 30;
 function recentSyms() {
   let r = [];
   try { r = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch (e) {}
   if (!r.length) tabs.forEach(tab => leaves(tab.root || null).forEach(c => { if (c.sym && c.kind !== 'watch' && !r.includes(c.sym)) r.push(c.sym); }));
-  return r.filter(x => typeof x === 'string').slice(0, 16);
+  return r.filter(x => typeof x === 'string').slice(0, RECENT_MAX);
 }
 function noteRecent(sym) {
-  const r = [sym, ...recentSyms().filter(x => x !== sym)].slice(0, 16);
+  const r = [sym, ...recentSyms().filter(x => x !== sym)].slice(0, RECENT_MAX);
   try { localStorage.setItem(RECENT_KEY, JSON.stringify(r)); } catch (e) {}
 }
 // Suggestions while typing: tickers you already use first, then Schwab's list of every symbol (by ticker, and by
@@ -3523,12 +3526,12 @@ function rankSyms(q, found) {
 }
 
 function symbolPop(anchor, t, start) {
-  const recent = recentSyms().slice(0, 12);
+  const recent = recentSyms();
   openPop(anchor, `
     <h4>Symbol</h4>
     <form class="symform"><input id="symInput" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="30" value="${t.cell.sym}" aria-label="Ticker or company name"><button class="btn primary" type="submit">Go</button></form>
     <div class="sugg" hidden></div>
-    ${recent.length ? `<h4>Recent</h4><div class="picks">${recent.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}`, p => {
+    ${recent.length ? `<h4>Recent</h4><div class="picks recent">${recent.map(s => `<button data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}`, p => {
     const input = p.querySelector('input'), box = p.querySelector('.sugg');
     // After Enter the box closes and the new ticker stays highlighted on the chart, like thinkorswim: typing
     // straight away opens the box again with what was typed. Tapping a suggestion or a recent ticker just closes it.
@@ -4162,6 +4165,29 @@ function reportError(e) {
 }
 addEventListener('error', reportError);
 addEventListener('unhandledrejection', reportError);
+// iPhones zoom in on a text box while you type in it (its text is small at this page's scale). Once the
+// typing is done (the box closes or the keyboard goes away), snap back to the whole-page view by briefly
+// pinning the zoom to the fit. A pinch zoom you make yourself is left alone.
+(function () {
+  const vv = window.visualViewport, meta = document.querySelector('meta[name=viewport]');
+  if (!vv || !meta) return;
+  const base = meta.getAttribute('content'), isBox = el => el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.type !== 'checkbox' && el.type !== 'range' && !el.classList.contains('symarm');  // the highlighted ticker after Enter counts as done
+  let typed = false, timer = 0;
+  const check = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (!typed || isBox(document.activeElement)) return;
+      typed = false;
+      const fit = vv.width * vv.scale / document.documentElement.clientWidth;
+      if (!(fit > 0) || vv.scale <= fit * 1.02) return;
+      meta.setAttribute('content', `${base}, initial-scale=${fit.toFixed(4)}, maximum-scale=${fit.toFixed(4)}`);
+      setTimeout(() => { meta.setAttribute('content', base); window.scrollTo(0, 0); }, 350);
+    }, 200);
+  };
+  document.addEventListener('focusin', e => { if (isBox(e.target)) typed = true; }, true);
+  document.addEventListener('focusout', check, true);
+  vv.addEventListener('resize', () => { if (typed) check(); });
+})();
 function toast(html, sticky) {
   const el = document.createElement('div');
   el.className = 'toast';
