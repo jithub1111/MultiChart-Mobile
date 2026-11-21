@@ -3587,16 +3587,24 @@ function symbolPop(anchor, t, start) {
 }
 // On a phone the whole page is shrunk to fit, so the symbol box would be tiny. While you type, it shows
 // enlarged across the top of the screen (above the keyboard), and closing it brings back the normal view.
-const phoneBox = () => !!window.visualViewport && matchMedia('(pointer: coarse)').matches && visualViewport.scale <= 0.95;
+// How big one page pixel looks on screen. Browsers disagree on visualViewport.scale (Chrome on Android counts
+// from the fitted view, Safari from full size), so it comes from the screen's width in the current orientation
+// over the page width that is visible.
+function pageScale() {
+  const vv = window.visualViewport, land = innerWidth > innerHeight;
+  const sw = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  return sw / (vv ? vv.width : innerWidth);
+}
+const phoneBox = () => !!window.visualViewport && matchMedia('(pointer: coarse)').matches && pageScale() <= 0.95;
 function bigPop() {
   const vv = window.visualViewport;
   if (pop.hidden || !phoneBox()) return;  // tablets and computers show the box at a fine size already
   pop.classList.add('big');
-  const w = pop.offsetWidth, k = Math.min(0.94 * vv.width / w, 1.5 / vv.scale);
+  const ps = pageScale(), w = pop.offsetWidth, k = Math.min(0.94 * vv.width / w, 1.5 / ps);
   pop.style.transformOrigin = '0 0';
   pop.style.transform = `scale(${k.toFixed(3)})`;
   pop.style.left = (vv.offsetLeft + Math.max(0, (vv.width - w * k) / 2)) + 'px';
-  pop.style.top = (vv.offsetTop + 8 / vv.scale) + 'px';
+  pop.style.top = (vv.offsetTop + 8 / ps) + 'px';
 }
 // Keep it in view when the keyboard opens or the page moves under it.
 if (window.visualViewport) ['resize'].forEach(e => visualViewport.addEventListener(e, () => { if (pop.classList.contains('big') && !pop.hidden) bigPop(); }));
@@ -4210,8 +4218,8 @@ addEventListener('unhandledrejection', reportError);
     timer = setTimeout(() => {
       if (!typed || isBox(document.activeElement)) return;
       typed = false;
-      const fit = vv.width * vv.scale / document.documentElement.clientWidth;
-      if (!(fit > 0) || vv.scale <= fit * 1.02) return;
+      const ps = pageScale(), fit = ps * vv.width / document.documentElement.clientWidth;  // the whole-page view
+      if (!(fit > 0) || ps <= fit * 1.02) return;
       meta.setAttribute('content', `${base}, initial-scale=${fit.toFixed(4)}, maximum-scale=${fit.toFixed(4)}`);
       setTimeout(() => { meta.setAttribute('content', base); window.scrollTo(0, 0); }, 350);
     }, 200);
