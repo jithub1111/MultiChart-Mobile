@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#050608">
 <!-- width=980 is what iPhone uses for pages without this tag, so the layout stays as it was;
      viewport-fit=cover lets the page reach into the sides of the screen in landscape. -->
-<meta name="viewport" content="width=980, viewport-fit=cover">
+<meta name="viewport" content="width=980, viewport-fit=cover, interactive-widget=resizes-visual">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3611,8 +3611,9 @@ function armSym(t) {
   i.setAttribute('autocorrect', 'off'); i.setAttribute('aria-label', 'Type a new ticker');
   Object.assign(i.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', fontSize: cs.fontSize, fontFamily: cs.fontFamily });
   document.body.append(i);
-  const done = () => { i.remove(); removeEventListener('resize', done); };
-  addEventListener('resize', done);
+  const done = () => { i.remove(); removeEventListener('resize', moved); };
+  const moved = () => { if (!kbNow) done(); };
+  addEventListener('resize', moved);
   i.addEventListener('blur', done);
   i.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); i.blur(); } });
   i.addEventListener('input', () => {
@@ -3911,12 +3912,23 @@ function paintScale() {
 }
 // Picks up the zoom of the tab now on screen (after switching, opening or closing tabs).
 function followTabScale() { scalePref = prefFor(scaleTab()); paintScale(); }
+// Android phones shrink the window when the keyboard opens. That is not a real resize: acting on it would
+// close the symbol box (and the keyboard with it) or turn the layout as if the phone had rotated.
+let lastW = innerWidth;
+function keyboardResize() {
+  const a = document.activeElement, typing = a && /^(INPUT|TEXTAREA)$/.test(a.tagName);
+  const same = innerWidth === lastW;
+  lastW = innerWidth;
+  return typing && same;
+}
+addEventListener('resize', () => { kbNow = keyboardResize(); }, true);
+let kbNow = false;
 function applyScale() {
   paintScale();
   closePop();
   renderTabs();
 }
-addEventListener('resize', () => { if (scalePref === 'auto') applyScale(); });
+addEventListener('resize', () => { if (scalePref === 'auto' && !kbNow) applyScale(); });
 function switchTab(i) {
   closePop();
   if (!tabs[i] || !owns(tabs[i].id)) return;
@@ -4013,7 +4025,7 @@ function orientLayout() {
 }
 let wasLandscape = isLandscape();
 addEventListener('resize', () => {
-  if (isLandscape() === wasLandscape) return;
+  if (kbNow || isLandscape() === wasLandscape) return;
   wasLandscape = isLandscape();
   if (orientLayout()) render();
 });
