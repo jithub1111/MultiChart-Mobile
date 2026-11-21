@@ -3541,7 +3541,7 @@ function symbolPop(anchor, t, start) {
     const set = (sym, stay) => {
       sym = sym.trim().toUpperCase().replace(/[^A-Z0-9.\/]/g, ''); if (!sym) return;
       setSymbol(t, sym); closePop();
-      if (stay) armSym(t);
+      if (stay && !phoneBox()) armSym(t);  // on phones the keyboard just closes; tap the ticker to type again
     };
     let rows = [], hi = -1, typed = false, ask = 0, timer = 0;
     const paint = () => {
@@ -3576,7 +3576,8 @@ function symbolPop(anchor, t, start) {
     };
     p.querySelectorAll('.picks [data-s]').forEach(b => b.onclick = () => set(b.dataset.s));
     // The ticker starts highlighted, so typing replaces it. Opened by typing on the highlighted ticker, the box
-    // starts with what was typed.
+    // starts with what was typed. On a phone the box is enlarged first, so the phone doesn't zoom in on a tiny box.
+    bigPop();
     input.focus();
     if (start) { input.value = start; input.setSelectionRange(start.length, start.length); suggest(); return; }
     input.setSelectionRange(0, input.value.length);
@@ -3586,10 +3587,10 @@ function symbolPop(anchor, t, start) {
 }
 // On a phone the whole page is shrunk to fit, so the symbol box would be tiny. While you type, it shows
 // enlarged across the top of the screen (above the keyboard), and closing it brings back the normal view.
+const phoneBox = () => !!window.visualViewport && matchMedia('(pointer: coarse)').matches && visualViewport.scale <= 0.95;
 function bigPop() {
   const vv = window.visualViewport;
-  if (pop.hidden || !vv || !matchMedia('(pointer: coarse)').matches) return;
-  if (vv.scale > 0.8) return;  // a page pixel already shows near full size (tablets, or zoomed in)
+  if (pop.hidden || !phoneBox()) return;  // tablets and computers show the box at a fine size already
   pop.classList.add('big');
   const w = pop.offsetWidth, k = Math.min(0.94 * vv.width / w, 1.5 / vv.scale);
   pop.style.transformOrigin = '0 0';
@@ -3598,7 +3599,7 @@ function bigPop() {
   pop.style.top = (vv.offsetTop + 8 / vv.scale) + 'px';
 }
 // Keep it in view when the keyboard opens or the page moves under it.
-if (window.visualViewport) ['resize', 'scroll'].forEach(e => visualViewport.addEventListener(e, () => { if (pop.classList.contains('big') && !pop.hidden) bigPop(); }));
+if (window.visualViewport) ['resize'].forEach(e => visualViewport.addEventListener(e, () => { if (pop.classList.contains('big') && !pop.hidden) bigPop(); }));
 // The chart's ticker, highlighted and ready for typing: a field laid over the ticker button. The first key
 // typed opens the symbol box with it. Tapping elsewhere or Escape leaves it as a plain ticker again.
 function armSym(t) {
