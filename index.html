@@ -227,6 +227,10 @@ html.nobar .showbar { display: inline-flex; }
 .lgrid button { height: 34px; border: 0; border-radius: 6px; color: #fff; font-weight: 700; font-size: 13px; padding: 0; }
 .lgrid button[aria-current=true] { outline: 2px solid var(--fg); outline-offset: 2px; }
 .last { font-size: 15px; font-weight: 700; white-space: nowrap; }
+/* Which exchange the stock trades on, next to the ticker. OTC stands out in amber. */
+.exch { flex: none; font-family: var(--ui); font-size: 9px; font-weight: 700; letter-spacing: .03em; line-height: 1; padding: 2px 3px;
+  border-radius: 3px; color: var(--muted); border: 1px solid var(--line); }
+.exch.otc { color: #f5b041; border-color: color-mix(in srgb, #f5b041 55%, transparent); background: color-mix(in srgb, #f5b041 12%, transparent); }
 /* Short sale restriction and trading halt markers in the panel header. */
 .ssr, .haltb { flex: none; font-family: var(--ui); font-weight: 800; color: #fff; background: #d81e2c; border-radius: 3px; line-height: 1; }
 .ssr { font-size: 11px; padding: 2px 4px; margin-right: -2px; }
@@ -1022,6 +1026,18 @@ async function loadLive(s) {
   syncStream();
 }
 // Shared by both live sources once the history has arrived.
+// Where a stock trades, short: NASDAQ, NYSE, AMEX (NYSE American), ARCA, CBOE or OTC (pink sheets and OTC tiers).
+function exchName(x) {
+  const t = String(x || '').trim(), u = t.toUpperCase();
+  if (!t) return '';
+  if (/PINK|OTC|GREY|EXPERT/.test(u) || u === 'U' || u === '9') return 'OTC';
+  if (/ARCA|^P$/.test(u)) return 'ARCA';
+  if (/AMEX|AMERICAN|^A$/.test(u)) return 'AMEX';
+  if (/NASDAQ|^Q$/.test(u)) return 'NASDAQ';
+  if (/NYSE|^N$/.test(u)) return 'NYSE';
+  if (/BATS|CBOE|^Z$/.test(u)) return 'CBOE';
+  return u.length <= 8 ? u : u.slice(0, 8);
+}
 function settle(s, m1, daily, emptyMsg) {
   if (!m1.length && !daily.length) throw new DataError(emptyMsg, 'empty');
   s.m1 = m1;
@@ -1248,8 +1264,9 @@ async function loadSchwab(s) {
   await addEarly(s.sym, m1);
   settle(s, m1, candles(d, true), `No data for ${s.sym}. Check the symbol.`);
   try {
-    const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote`);
-    const qt = j[s.sym] && j[s.sym].quote;
+    const j = await helper(`/quotes?symbols=${encodeURIComponent(s.sym)}&fields=quote,reference`);
+    const qt = j[s.sym] && j[s.sym].quote, ref = j[s.sym] && j[s.sym].reference;
+    if (ref) s.exch = exchName(ref.exchangeName || ref.exchange);
     if (qt) { s.qb = qt.bidPrice; s.qa = qt.askPrice; if (qt.securityStatus) s.status = String(qt.securityStatus); }
   } catch (e) {}
 }
@@ -2165,6 +2182,7 @@ class Tile {
       <div class="th">
         <button class="sym" aria-label="${watch ? 'Choose watchlist' : 'Change symbol'}"></button>
         <button class="link" aria-label="Link group"></button>
+        ${watch ? '' : '<span class="exch" hidden></span>'}
         ${watch ? `<span class="spacer"></span><button class="ib wadd" aria-label="Add tickers">${ICON.plus}</button>` : `
         ${chart ? '' : '<span class="name"></span>'}
         <span class="ssr" hidden title="Short sale restriction (SSR): the stock fell 10% below the previous close, so short sales are restricted today (and next session)">S</span>
@@ -2811,6 +2829,9 @@ class Tile {
     this.$('.bid').textContent = s.bid.toFixed(d);
     this.$('.ask').textContent = s.ask.toFixed(d);
     this.$('.ssr').hidden = !(ssrOn && ssrOf(s));
+    const ex = s.exch || (!isLive() ? (/F$/.test(s.sym) && s.sym.length === 5 ? 'OTC' : 'NASDAQ') : '');
+    const exEl = this.$('.exch');
+    if (exEl && exEl.textContent !== ex) { exEl.textContent = ex; exEl.hidden = !ex; exEl.classList.toggle('otc', ex === 'OTC'); exEl.title = ex ? `Trades on ${ex === 'OTC' ? 'the OTC market' : ex}` : ''; }
     if (this.chart) {
       const h = haltOn && isHalted(s);
       this.$('.haltb').hidden = !h;
