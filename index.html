@@ -2762,7 +2762,9 @@ class Tile {
       span.value = intra ? this.cell.days || 1 : this.range;
       this.paintQuick();
       const list = bars(sym, this.cell.tf);
-      const fmt = { type: 'price', precision: dec(last(s)), minMove: s.inc };
+      // The tick can't be finer than the decimals shown: a stock that crossed $1 keeps its 0.0001 tick, and
+      // 3 decimals with a 4-decimal tick makes the chart library print labels like "1.5.5" for 1.0855.
+      const prec = dec(last(s)), fmt = { type: 'price', precision: prec, minMove: Math.max(s.inc || 0, 10 ** -prec) };
       this.candles.applyOptions({ priceFormat: fmt });
       this.vw.applyOptions({ priceFormat: fmt });
       this.list = list; this.sig = '';
